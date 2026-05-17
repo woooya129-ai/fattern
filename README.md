@@ -81,7 +81,8 @@ python -m unittest discover -s tests
 현재 구현은 MVP 범위다.
 
 - closed LWPOLYLINE과 R12 `POLYLINE + VERTEX + SEQEND` 지원
-- bbox shelf 기반 rough marker
+- bottom-left gap reuse + beam search 기반 compact rough marker
+- 후보 배치는 좌/하단, 우측 정렬, 하단 정렬, clearance 접촉점을 함께 평가
 - DXF layer convention 자동 판정은 제한적
 - 복잡한 nesting 최적화, 무늬맞춤, 상용 CAD 호환은 포함하지 않음
 

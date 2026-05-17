@@ -59,6 +59,9 @@ Geometry metrics
 Layout
   - two pieces fit within fabric width
   - fabric width overflow moves to next row
+  - compact layout reuses gaps above shorter pieces
+  - compact layout keeps stacked alternatives to reduce marker length
+  - layout candidate search evaluates edge-aligned and clearance-contact positions
   - rotation not allowed is respected
   - clearance 0.2cm is applied
   - marker_length is deterministic

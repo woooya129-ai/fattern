@@ -81,7 +81,8 @@ python -m unittest discover -s tests
 The current implementation is MVP-scoped.
 
 - Supports closed LWPOLYLINE and R12 `POLYLINE + VERTEX + SEQEND` input
-- Uses a bbox shelf rough marker strategy
+- Uses a bottom-left gap-reuse compact rough marker strategy with beam search
+- Evaluates left/bottom, right-aligned, bottom-aligned, and clearance-contact placement candidates
 - DXF layer convention detection is limited
 - Advanced nesting optimization, print matching, and full commercial CAD compatibility are out of scope
 

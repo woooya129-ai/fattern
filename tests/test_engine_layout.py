@@ -62,6 +62,43 @@ class LayoutTests(unittest.TestCase):
         self.assertAlmostEqual(result.placements[1].y, 3.2)
         self.assertAlmostEqual(result.marker_length, 5.2)
 
+    def test_compact_layout_reuses_gap_above_short_piece(self) -> None:
+        metrics = MetricsResult(
+            metrics=(
+                metric("piece_0001", 7.0, 5.0),
+                metric("piece_0002", 3.0, 2.0),
+                metric("piece_0003", 3.0, 2.0),
+            ),
+            messages=(),
+        )
+
+        result = estimate_marker_layout(metrics, fabric_width=10.2)
+
+        self.assertFalse(result.has_blocker())
+        self.assertAlmostEqual(result.marker_length, 5.0)
+        self.assertAlmostEqual(result.placements[2].x, 7.2)
+        self.assertAlmostEqual(result.placements[2].y, 2.2)
+
+    def test_compact_layout_keeps_stacked_alternative_to_reduce_length(self) -> None:
+        metrics = MetricsResult(
+            metrics=(
+                metric("piece_0001", 3.0, 2.0),
+                metric("piece_0002", 3.0, 2.0),
+                metric("piece_0003", 7.0, 5.0),
+            ),
+            messages=(),
+        )
+
+        result = estimate_marker_layout(metrics, fabric_width=10.2)
+
+        self.assertFalse(result.has_blocker())
+        self.assertAlmostEqual(result.marker_length, 5.0)
+        self.assertEqual(result.placements[0].piece_id, "piece_0001")
+        self.assertAlmostEqual(result.placements[1].x, 0.0)
+        self.assertAlmostEqual(result.placements[1].y, 2.2)
+        self.assertAlmostEqual(result.placements[2].x, 3.2)
+        self.assertAlmostEqual(result.placements[2].y, 0.0)
+
     def test_rotation_rule_is_respected(self) -> None:
         metrics = MetricsResult(metrics=(metric("piece_0001", 7.0, 3.0),), messages=())
 
