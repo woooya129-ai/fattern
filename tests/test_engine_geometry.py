@@ -52,6 +52,21 @@ class GeometryMetricTests(unittest.TestCase):
         self.assertAlmostEqual(metric.perimeter, 14.0)
         self.assertEqual(metric.unit, "cm")
 
+    def test_piece_metrics_apply_average_seam_allowance(self) -> None:
+        result = calculate_piece_metrics(
+            candidate(((0.0, 0.0), (4.0, 0.0), (4.0, 3.0), (0.0, 3.0))),
+            seam_allowance_width=1.0,
+        )
+
+        self.assertFalse(result.has_blocker())
+        metric = result.metrics[0]
+        self.assertAlmostEqual(metric.bbox.width, 6.0)
+        self.assertAlmostEqual(metric.bbox.height, 5.0)
+        self.assertAlmostEqual(metric.area, 30.0)
+        self.assertAlmostEqual(metric.perimeter, 22.0)
+        self.assertAlmostEqual(metric.seam_allowance_width, 1.0)
+        self.assertEqual(result.messages[0].code, "SEAM_ALLOWANCE_ESTIMATED")
+
     def test_self_intersection_returns_blocker(self) -> None:
         result = calculate_piece_metrics(candidate(((0.0, 0.0), (2.0, 2.0), (0.0, 2.0), (2.0, 0.0))))
 

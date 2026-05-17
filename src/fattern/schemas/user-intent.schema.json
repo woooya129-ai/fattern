@@ -41,6 +41,7 @@
           "default": [0, 180]
         },
         "seam_allowance_included": {"type": ["boolean", "null"], "default": null},
+        "seam_allowance_width": {"type": ["number", "null"], "minimum": 0, "default": null},
         "one_way_fabric": {"type": ["boolean", "null"], "default": null},
         "clearance": {"type": ["number", "null"], "minimum": 0, "default": 0.2}
       }

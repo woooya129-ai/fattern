@@ -167,7 +167,13 @@ def execute_marker_estimation(
         active_registry,
         state,
         "calculate_piece_metrics",
-        {"schema_version": "1.0", "job_id": job_id, "piece_set_id": piece_set_id, "unit": user_intent["unit"]},
+        {
+            "schema_version": "1.0",
+            "job_id": job_id,
+            "piece_set_id": piece_set_id,
+            "unit": user_intent["unit"],
+            "seam_allowance_width": _seam_allowance_width(user_intent),
+        },
     )
     if _blocked(metrics_response):
         return _blocked_result(state, "calculate_piece_metrics", metrics_response)
@@ -340,6 +346,16 @@ def _grainline_status(extract_response: ToolResponse) -> str:
     if pieces and all(piece.get("has_grainline") is True for piece in pieces):
         return "present"
     return "missing"
+
+
+def _seam_allowance_width(user_intent: Mapping[str, Any]) -> float:
+    rules = user_intent.get("rules", {})
+    if not isinstance(rules, Mapping) or rules.get("seam_allowance_included") is not False:
+        return 0.0
+    width = rules.get("seam_allowance_width")
+    if isinstance(width, (int, float)) and not isinstance(width, bool) and width >= 0:
+        return float(width)
+    return 0.0
 
 
 def _engine_warnings(warnings: list[dict[str, Any]]) -> tuple[EngineMessage, ...]:

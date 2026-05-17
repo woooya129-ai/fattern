@@ -21,6 +21,7 @@ Commercial use, production use, paid consulting, resale, hosted service use, or 
 - Extracts piece candidates from closed DXF LWPOLYLINE and R12 POLYLINE entities
 - Calculates area, perimeter, bounding boxes, and source polygon outlines
 - Creates polygon-aware rough marker layouts from fabric width, rotation rules, and clearance
+- Applies average seam allowance for rough marker estimation when the source pattern excludes seam allowance
 - Validates overlap, fabric width, and grainline rules
 - Renders SVG previews
 - Generates Markdown reports
@@ -38,6 +39,18 @@ Example:
 
 ```powershell
 python -m fattern estimate tests\fixtures\rectangle_lwpolyline.dxf --fabric-width 10 --unit cm --seam-allowance-included yes --one-way-fabric no --out fattern-output
+```
+
+If the source pattern does not include seam allowance, run with `--seam-allowance-included no`. The default average values are `cm=1.0`, `mm=10.0`, and `inch=0.375`.
+
+```powershell
+python -m fattern estimate tests\fixtures\rectangle_lwpolyline.dxf --fabric-width 10 --unit cm --seam-allowance-included no --one-way-fabric no --out fattern-output
+```
+
+To override the default, pass `--seam-allowance`.
+
+```powershell
+python -m fattern estimate tests\fixtures\rectangle_lwpolyline.dxf --fabric-width 10 --unit cm --seam-allowance-included no --seam-allowance 0.8 --one-way-fabric no --out fattern-output
 ```
 
 On Windows, the local wrapper also works:
@@ -88,6 +101,7 @@ The current implementation is MVP-scoped.
 - Always compares against a conservative bbox baseline and discards detailed-search results that are worse
 - SVG previews render the placed closed-polyline outlines instead of bbox rectangles
 - Falls back to conservative bbox placement with a `BBOX_FALLBACK_USED` warning when compact polygon candidates fail full-outline validation
+- Seam allowance uses a rough average outline expansion and is not an exact CAD offset-curve calculation
 - DXF layer convention detection is limited
 - Arbitrary-angle rotation, advanced curve flattening, print matching, and commercial-CAD-grade nesting are out of scope
 

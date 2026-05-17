@@ -198,6 +198,11 @@
           "type": "number",
           "minimum": 0.01,
           "default": 0.2
+        },
+        "seam_allowance_width": {
+          "type": "number",
+          "minimum": 0,
+          "default": 0
         }
       }
     },

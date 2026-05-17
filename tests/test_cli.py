@@ -84,6 +84,35 @@ class FatternCliTests(unittest.TestCase):
         self.assertEqual(response["stopped_at"], "estimate_marker_layout")
         self.assertEqual(response["errors"][0]["code"], "MISSING_GRAINLINE_ON_ONE_WAY_FABRIC")
 
+    def test_estimate_applies_default_seam_allowance_when_not_included(self) -> None:
+        output_dir = self.temp_dir / "seam-out"
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            code = main(
+                [
+                    "estimate",
+                    str(FIXTURE_DIR / "rectangle_lwpolyline.dxf"),
+                    "--fabric-width",
+                    "10",
+                    "--unit",
+                    "cm",
+                    "--seam-allowance-included",
+                    "no",
+                    "--one-way-fabric",
+                    "no",
+                    "--out",
+                    str(output_dir),
+                ]
+            )
+
+        self.assertEqual(code, 0, stderr.getvalue())
+        response = json.loads(stdout.getvalue())
+        self.assertIn("SEAM_ALLOWANCE_ESTIMATED", [warning["code"] for warning in response["warnings"]])
+        self.assertEqual(response["layout"]["marker_length"], 5.0)
+        self.assertAlmostEqual(response["layout"]["efficiency"], 0.6)
+
 
 if __name__ == "__main__":
     unittest.main()

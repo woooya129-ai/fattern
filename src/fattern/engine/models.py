@@ -71,6 +71,7 @@ class PieceMetrics:
     unit: str
     point_count: int
     points: tuple[Point, ...] = ()
+    seam_allowance_width: float = 0.0
 
 
 @dataclass(frozen=True)

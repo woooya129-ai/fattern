@@ -26,6 +26,7 @@ test_policy_defaults_are_locked
   - rotation default 0, 180
   - clearance default 0.2
   - seam_allowance_included default null
+  - seam_allowance_width default null
 
 test_opaque_id_pattern_blocks_paths
   - job_abc-123 허용
@@ -53,6 +54,8 @@ Geometry metrics
   - rectangle area
   - triangle area
   - perimeter
+  - average seam allowance expands bbox, area, and perimeter
+  - average seam allowance emits SEAM_ALLOWANCE_ESTIMATED warning
   - self-intersection returns SELF_INTERSECTION blocker
   - area <= 0 returns INVALID_POLYGON blocker
 
@@ -122,6 +125,7 @@ Missing input
 
 Tool chain
   - create_job -> register_input_file -> parse_dxf -> extract_pattern_pieces -> calculate_piece_metrics -> estimate_marker_layout -> render_marker_svg
+  - calculate_piece_metrics receives seam_allowance_width when seam_allowance_included=false
   - blocker after parse_dxf stops chain
   - blocker after extract_pattern_pieces stops chain
   - SVG_RENDER_FAILED warning still returns JSON result

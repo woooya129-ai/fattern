@@ -215,6 +215,26 @@ class McpToolTests(unittest.TestCase):
         self.assertAlmostEqual(metrics_response["total_area"], 12.0)
         self.assertEqual(metrics_response["piece_metrics"][0]["bbox"], {"width": 4.0, "height": 3.0})
 
+    def test_calculate_piece_metrics_applies_seam_allowance_width(self) -> None:
+        job_id, piece_set_id = self._create_rectangle_piece_set()
+
+        response = self.registry.call_tool(
+            "calculate_piece_metrics",
+            {
+                "schema_version": "1.0",
+                "job_id": job_id,
+                "piece_set_id": piece_set_id,
+                "unit": "cm",
+                "seam_allowance_width": 1.0,
+            },
+        )
+
+        self.assertEqual(response["errors"], [])
+        self.assertEqual(response["warnings"][0]["code"], "SEAM_ALLOWANCE_ESTIMATED")
+        self.assertAlmostEqual(response["total_area"], 30.0)
+        self.assertEqual(response["piece_metrics"][0]["bbox"], {"width": 6.0, "height": 5.0})
+        self.assertAlmostEqual(response["piece_metrics"][0]["seam_allowance_width"], 1.0)
+
     def test_estimate_marker_layout_returns_layout_id_and_engine_values(self) -> None:
         job_id, metrics_id = self._create_rectangle_metrics()
 
@@ -458,6 +478,20 @@ class McpToolTests(unittest.TestCase):
         return response["job_id"]
 
     def _create_rectangle_metrics(self) -> tuple[str, str]:
+        job_id, piece_set_id = self._create_rectangle_piece_set()
+        metrics_response = self.registry.call_tool(
+            "calculate_piece_metrics",
+            {
+                "schema_version": "1.0",
+                "job_id": job_id,
+                "piece_set_id": piece_set_id,
+                "unit": "cm",
+            },
+        )
+        self.assertEqual(metrics_response["errors"], [])
+        return job_id, metrics_response["metrics_id"]
+
+    def _create_rectangle_piece_set(self) -> tuple[str, str]:
         job_id = self._create_job()
         file_id = self.store.register_input_file(
             job_id,
@@ -479,17 +513,8 @@ class McpToolTests(unittest.TestCase):
                 "grainline_layer_names": [],
             },
         )
-        metrics_response = self.registry.call_tool(
-            "calculate_piece_metrics",
-            {
-                "schema_version": "1.0",
-                "job_id": job_id,
-                "piece_set_id": extract_response["piece_set_id"],
-                "unit": "cm",
-            },
-        )
-        self.assertEqual(metrics_response["errors"], [])
-        return job_id, metrics_response["metrics_id"]
+        self.assertEqual(extract_response["errors"], [])
+        return job_id, extract_response["piece_set_id"]
 
     def _create_rectangle_layout(self) -> tuple[str, str]:
         job_id, metrics_id = self._create_rectangle_metrics()

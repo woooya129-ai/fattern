@@ -49,6 +49,12 @@ def _build_parser() -> argparse.ArgumentParser:
     )
     estimate.add_argument("--rotation", default="0,180", help="Comma-separated allowed rotations. Default: 0,180.")
     estimate.add_argument("--clearance", type=float, default=0.2, help="Piece clearance. Default: 0.2.")
+    estimate.add_argument(
+        "--seam-allowance",
+        type=float,
+        default=None,
+        help="Average seam allowance in the selected unit when seam allowance is not included.",
+    )
     estimate.add_argument("--out", type=Path, default=Path("fattern-output"), help="Output directory.")
 
     subparsers.add_parser("mcp-stdio", help="Run the MCP server over stdio.")
@@ -66,6 +72,12 @@ def _estimate(args: argparse.Namespace) -> int:
     except ValueError as exc:
         print(json.dumps({"status": "error", "message": str(exc)}, ensure_ascii=False), file=sys.stderr)
         return 2
+    if args.seam_allowance is not None and args.seam_allowance < 0:
+        print(
+            json.dumps({"status": "error", "message": "Seam allowance must be zero or greater."}, ensure_ascii=False),
+            file=sys.stderr,
+        )
+        return 2
 
     user_intent = normalize_user_intent(
         {
@@ -74,6 +86,7 @@ def _estimate(args: argparse.Namespace) -> int:
             "fabric_width": args.fabric_width,
             "rules": {
                 "seam_allowance_included": _yes_no(args.seam_allowance_included),
+                "seam_allowance_width": args.seam_allowance,
                 "one_way_fabric": _yes_no(args.one_way_fabric),
                 "rotation_allowed_degrees": rotations,
                 "clearance": args.clearance,

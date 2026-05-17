@@ -40,6 +40,7 @@ class SchemaContractTests(unittest.TestCase):
         self.assertEqual(rules["rotation_allowed_degrees"]["default"], [0, 180])
         self.assertEqual(rules["clearance"]["default"], 0.2)
         self.assertIsNone(rules["seam_allowance_included"]["default"])
+        self.assertIsNone(rules["seam_allowance_width"]["default"])
 
     def test_common_opaque_id_pattern(self) -> None:
         schema = load_schema("common.schema.json")
@@ -70,7 +71,9 @@ class SchemaContractTests(unittest.TestCase):
 
     def test_estimate_marker_layout_input_locks_policy_defaults(self) -> None:
         schema = load_schema("mcp-tools.schema.json")
+        metrics_input = schema["$defs"]["calculate_piece_metrics_input"]["properties"]
         layout_input = schema["$defs"]["estimate_marker_layout_input"]["properties"]
+        self.assertEqual(metrics_input["seam_allowance_width"]["default"], 0)
         self.assertEqual(layout_input["fabric_width_unit"]["default"], "cm")
         self.assertEqual(layout_input["rotation_allowed_degrees"]["default"], [0, 180])
         self.assertEqual(layout_input["clearance"]["default"], 0.2)

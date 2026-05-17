@@ -82,6 +82,7 @@ CALCULATE_PIECE_METRICS_INPUT = {
         "piece_set_id": OPAQUE_ID_SCHEMA,
         "unit": {"type": "string", "enum": ["mm", "cm", "inch"], "default": "cm"},
         "curve_flattening_tolerance": {"type": "number", "minimum": 0.01, "default": 0.2},
+        "seam_allowance_width": {"type": "number", "minimum": 0, "default": 0},
     },
 }
 

@@ -142,7 +142,11 @@ class McpToolRegistry:
     def _calculate_piece_metrics(self, arguments: dict[str, Any]) -> ToolResponse:
         job_id = arguments["job_id"]
         pieces = self.store.get_piece_set(job_id, arguments["piece_set_id"])
-        result = calculate_piece_set_metrics(pieces, unit=arguments["unit"])
+        result = calculate_piece_set_metrics(
+            pieces,
+            unit=arguments["unit"],
+            seam_allowance_width=arguments.get("seam_allowance_width", 0.0),
+        )
         warnings, errors = _split_messages(result.messages)
         response: ToolResponse = {
             "job_id": job_id,
@@ -304,6 +308,7 @@ def _piece_metrics(metric: PieceMetrics) -> dict[str, Any]:
         "has_grainline": False,
         "unit": metric.unit,
         "point_count": metric.point_count,
+        "seam_allowance_width": metric.seam_allowance_width,
     }
 
 

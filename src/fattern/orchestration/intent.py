@@ -14,6 +14,7 @@ from importlib import resources
 from pathlib import Path
 from typing import Any
 
+from fattern.engine.metrics import default_seam_allowance_width
 from fattern.mcp.validation import ToolValidationError, validate_input
 from fattern.schemas import DEFAULT_CLEARANCE_CM, DEFAULT_ROTATION_ALLOWED_DEGREES, ID_PATTERN
 
@@ -37,7 +38,7 @@ def normalize_user_intent(raw: dict[str, Any] | None) -> dict[str, Any]:
     source = raw or {}
     unit = _normalize_unit(source.get("unit"))
     fabric = _normalize_fabric(source, unit)
-    rules = _normalize_rules(source)
+    rules = _normalize_rules(source, unit)
     missing_fields = _missing_fields(source, unit, fabric, rules)
 
     intent = {
@@ -113,12 +114,18 @@ def _normalize_fabric(source: dict[str, Any], unit: str | None) -> dict[str, Any
     }
 
 
-def _normalize_rules(source: dict[str, Any]) -> dict[str, Any]:
+def _normalize_rules(source: dict[str, Any], unit: str | None) -> dict[str, Any]:
     rules_source = source.get("rules") if isinstance(source.get("rules"), dict) else {}
+    seam_allowance_included = _normalize_optional_bool(rules_source.get("seam_allowance_included"))
     return {
         "grainline_required": _normalize_bool(rules_source.get("grainline_required"), default=True),
         "rotation_allowed_degrees": _normalize_rotations(rules_source.get("rotation_allowed_degrees")),
-        "seam_allowance_included": _normalize_optional_bool(rules_source.get("seam_allowance_included")),
+        "seam_allowance_included": seam_allowance_included,
+        "seam_allowance_width": _normalize_seam_allowance_width(
+            rules_source.get("seam_allowance_width", source.get("seam_allowance_width")),
+            unit,
+            seam_allowance_included,
+        ),
         "one_way_fabric": _normalize_optional_bool(rules_source.get("one_way_fabric", source.get("one_way_fabric"))),
         "clearance": _normalize_clearance(rules_source.get("clearance", source.get("clearance"))),
     }
@@ -246,6 +253,14 @@ def _normalize_clearance(value: Any) -> float:
     if isinstance(value, (int, float)) and not isinstance(value, bool) and value >= 0:
         return value
     return DEFAULT_CLEARANCE_CM
+
+
+def _normalize_seam_allowance_width(value: Any, unit: str | None, seam_allowance_included: bool | None) -> float | None:
+    if isinstance(value, (int, float)) and not isinstance(value, bool) and value >= 0:
+        return float(value)
+    if seam_allowance_included is not False or unit is None:
+        return None
+    return default_seam_allowance_width(unit)
 
 
 def _load_schema(name: str) -> dict[str, Any]:

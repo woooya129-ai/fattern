@@ -64,6 +64,11 @@
           "type": ["boolean", "null"],
           "default": null
         },
+        "seam_allowance_width": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "default": null
+        },
         "one_way_fabric": {
           "type": ["boolean", "null"],
           "default": null
@@ -133,4 +138,3 @@
     }
   }
 }
-
