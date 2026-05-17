@@ -1,0 +1,136 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fattern.local/schemas/user-intent.schema.json",
+  "title": "UserIntent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "intent", "unit", "fabric", "rules", "missing_fields", "confidence"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "intent": {
+      "type": "string",
+      "enum": ["estimate_yield", "parse_only", "render_preview", "explain_result", "ask_clarification"]
+    },
+    "unit": {
+      "type": ["string", "null"],
+      "enum": ["mm", "cm", "inch", null],
+      "default": "cm"
+    },
+    "fabric": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["width", "width_unit"],
+      "properties": {
+        "width": {
+          "type": ["number", "null"],
+          "minimum": 1
+        },
+        "width_unit": {
+          "type": ["string", "null"],
+          "enum": ["mm", "cm", "inch", null],
+          "default": "cm"
+        }
+      }
+    },
+    "rules": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "grainline_required",
+        "rotation_allowed_degrees",
+        "seam_allowance_included",
+        "one_way_fabric",
+        "clearance"
+      ],
+      "properties": {
+        "grainline_required": {
+          "type": "boolean",
+          "default": true
+        },
+        "rotation_allowed_degrees": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "enum": [0, 90, 180, 270]
+          },
+          "minItems": 1,
+          "uniqueItems": true,
+          "default": [0, 180]
+        },
+        "seam_allowance_included": {
+          "type": ["boolean", "null"],
+          "default": null
+        },
+        "one_way_fabric": {
+          "type": ["boolean", "null"],
+          "default": null
+        },
+        "clearance": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "default": 0.2
+        }
+      }
+    },
+    "piece_overrides": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/piece_override"
+      },
+      "default": []
+    },
+    "missing_fields": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "enum": [
+          "dxf_file",
+          "fabric_width",
+          "unit",
+          "piece_quantity",
+          "grainline_rule",
+          "rotation_rule",
+          "seam_allowance_included",
+          "one_way_fabric"
+        ]
+      },
+      "default": []
+    },
+    "confidence": {
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1
+    }
+  },
+  "$defs": {
+    "piece_override": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["piece_name", "quantity", "rotation_allowed_degrees"],
+      "properties": {
+        "piece_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "quantity": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "rotation_allowed_degrees": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "enum": [0, 90, 180, 270]
+          },
+          "minItems": 1,
+          "uniqueItems": true
+        }
+      }
+    }
+  }
+}
+

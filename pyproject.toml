@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=69", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "fattern"
+version = "0.1.0"
+description = "DXF-based rough marker yield estimator."
+requires-python = ">=3.11"
+authors = [{ name = "fattern maintainers" }]
+license = { text = "PolyForm Noncommercial License 1.0.0" }
+keywords = ["dxf", "marker", "pattern", "yield", "garment"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "License :: Other/Proprietary License",
+]
+
+[project.scripts]
+fattern = "fattern.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+"fattern.schemas" = ["*.json"]

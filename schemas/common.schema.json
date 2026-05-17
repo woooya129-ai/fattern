@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fattern.local/schemas/common.schema.json",
+  "title": "FatternCommon",
+  "type": "object",
+  "additionalProperties": false,
+  "$defs": {
+    "unit": {
+      "type": "string",
+      "enum": ["mm", "cm", "inch"]
+    },
+    "nullable_unit": {
+      "type": ["string", "null"],
+      "enum": ["mm", "cm", "inch", null]
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["info", "warning", "blocker"]
+    },
+    "message": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "message", "severity"],
+      "properties": {
+        "code": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "pattern": "^[A-Z0-9_]+$"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "severity": {
+          "$ref": "#/$defs/severity"
+        }
+      }
+    },
+    "messages": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/message"
+      },
+      "default": []
+    },
+    "opaque_id": {
+      "type": "string",
+      "minLength": 5,
+      "maxLength": 80,
+      "pattern": "^(job|file|dxf_parse|piece_set|metrics|layout|artifact)_[a-z0-9_-]{1,72}$"
+    },
+    "safe_label": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 120
+    }
+  }
+}

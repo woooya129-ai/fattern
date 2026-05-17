@@ -1,0 +1,41 @@
+# Python caches and build artifacts
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+build/
+dist/
+*.egg-info/
+*.whl
+
+# Virtual environments
+.venv/
+venv/
+env/
+
+# Local CLI and job outputs
+fattern-output/
+result.json
+marker_preview.svg
+marker_report.md
+
+# Local tool state and personal settings
+.claude/
+.codex/
+.cursor/
+.idea/
+.vscode/
+
+# Agent run logs and generated task state
+.agents/task-board.md
+.agents/task-packets/
+.agents/queue/
+docs/worker-reports/
+
+# OS noise
+.DS_Store
+Thumbs.db

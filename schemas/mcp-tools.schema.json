@@ -1,0 +1,295 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fattern.local/schemas/mcp-tools.schema.json",
+  "title": "McpToolContracts",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "tools"],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "tools": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/tool_contract"
+      }
+    }
+  },
+  "$defs": {
+    "opaque_id": {
+      "type": "string",
+      "minLength": 5,
+      "maxLength": 80,
+      "pattern": "^(job|file|dxf_parse|piece_set|metrics|layout|artifact)_[a-z0-9_-]{1,72}$"
+    },
+    "tool_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "inputSchema"],
+      "properties": {
+        "name": {
+          "type": "string",
+          "enum": [
+            "create_job",
+            "parse_dxf",
+            "extract_pattern_pieces",
+            "calculate_piece_metrics",
+            "estimate_marker_layout",
+            "render_marker_svg",
+            "get_job_status",
+            "export_artifacts"
+          ]
+        },
+        "inputSchema": {
+          "type": "object",
+          "additionalProperties": true
+        }
+      }
+    },
+    "create_job_input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "job_name"],
+      "properties": {
+        "schema_version": {
+          "type": "string",
+          "const": "1.0"
+        },
+        "job_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "user_note": {
+          "type": "string",
+          "maxLength": 500,
+          "default": ""
+        }
+      }
+    },
+    "id_only_input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "job_id"],
+      "properties": {
+        "schema_version": {
+          "type": "string",
+          "const": "1.0"
+        },
+        "job_id": {
+          "$ref": "#/$defs/opaque_id"
+        }
+      }
+    },
+    "parse_dxf_input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "job_id", "file_id", "unit_hint"],
+      "properties": {
+        "schema_version": {
+          "type": "string",
+          "const": "1.0"
+        },
+        "job_id": {
+          "$ref": "#/$defs/opaque_id"
+        },
+        "file_id": {
+          "$ref": "#/$defs/opaque_id"
+        },
+        "unit_hint": {
+          "type": ["string", "null"],
+          "enum": ["mm", "cm", "inch", null],
+          "default": "cm"
+        },
+        "layer_profile": {
+          "type": ["string", "null"],
+          "maxLength": 80,
+          "default": null
+        }
+      }
+    },
+    "extract_pattern_pieces_input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "job_id", "dxf_parse_id", "extraction_mode"],
+      "properties": {
+        "schema_version": {
+          "type": "string",
+          "const": "1.0"
+        },
+        "job_id": {
+          "$ref": "#/$defs/opaque_id"
+        },
+        "dxf_parse_id": {
+          "$ref": "#/$defs/opaque_id"
+        },
+        "extraction_mode": {
+          "type": "string",
+          "enum": ["closed_polylines_only", "connect_lines", "mixed_entities"],
+          "default": "closed_polylines_only"
+        },
+        "outline_layer_names": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 120
+          },
+          "default": []
+        },
+        "grainline_layer_names": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "maxLength": 120
+          },
+          "default": []
+        }
+      }
+    },
+    "calculate_piece_metrics_input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "job_id", "piece_set_id", "unit"],
+      "properties": {
+        "schema_version": {
+          "type": "string",
+          "const": "1.0"
+        },
+        "job_id": {
+          "$ref": "#/$defs/opaque_id"
+        },
+        "piece_set_id": {
+          "$ref": "#/$defs/opaque_id"
+        },
+        "unit": {
+          "type": "string",
+          "enum": ["mm", "cm", "inch"],
+          "default": "cm"
+        },
+        "curve_flattening_tolerance": {
+          "type": "number",
+          "minimum": 0.01,
+          "default": 0.2
+        }
+      }
+    },
+    "estimate_marker_layout_input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "job_id",
+        "metrics_id",
+        "fabric_width",
+        "fabric_width_unit",
+        "rotation_allowed_degrees",
+        "clearance"
+      ],
+      "properties": {
+        "schema_version": {
+          "type": "string",
+          "const": "1.0"
+        },
+        "job_id": {
+          "$ref": "#/$defs/opaque_id"
+        },
+        "metrics_id": {
+          "$ref": "#/$defs/opaque_id"
+        },
+        "fabric_width": {
+          "type": "number",
+          "minimum": 1
+        },
+        "fabric_width_unit": {
+          "type": "string",
+          "enum": ["mm", "cm", "inch"],
+          "default": "cm"
+        },
+        "rotation_allowed_degrees": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "enum": [0, 90, 180, 270]
+          },
+          "minItems": 1,
+          "uniqueItems": true,
+          "default": [0, 180]
+        },
+        "clearance": {
+          "type": "number",
+          "minimum": 0,
+          "default": 0.2
+        },
+        "one_way_fabric": {
+          "type": ["boolean", "null"],
+          "default": null
+        },
+        "grainline_status": {
+          "type": "string",
+          "enum": ["present", "missing", "unknown"],
+          "default": "unknown"
+        }
+      }
+    },
+    "render_marker_svg_input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "job_id", "layout_id"],
+      "properties": {
+        "schema_version": {
+          "type": "string",
+          "const": "1.0"
+        },
+        "job_id": {
+          "$ref": "#/$defs/opaque_id"
+        },
+        "layout_id": {
+          "$ref": "#/$defs/opaque_id"
+        }
+      }
+    },
+    "get_job_status_input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "job_id"],
+      "properties": {
+        "schema_version": {
+          "type": "string",
+          "const": "1.0"
+        },
+        "job_id": {
+          "$ref": "#/$defs/opaque_id"
+        }
+      }
+    },
+    "export_artifacts_input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "job_id", "artifact_ids"],
+      "properties": {
+        "schema_version": {
+          "type": "string",
+          "const": "1.0"
+        },
+        "job_id": {
+          "$ref": "#/$defs/opaque_id"
+        },
+        "artifact_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/opaque_id"
+          },
+          "minItems": 1,
+          "maxItems": 20
+        },
+        "archive_format": {
+          "type": "string",
+          "enum": ["zip"],
+          "default": "zip"
+        }
+      }
+    }
+  }
+}

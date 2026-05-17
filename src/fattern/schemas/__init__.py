@@ -1,0 +1,18 @@
+"""Schema policy constants for Fattern."""
+
+from .contracts import (
+    DEFAULT_CLEARANCE_CM,
+    DEFAULT_ROTATION_ALLOWED_DEGREES,
+    DEFAULT_UNIT,
+    ID_PATTERN,
+    RECOMMENDED_YIELD_CEIL_UNIT_CM,
+)
+
+__all__ = [
+    "DEFAULT_CLEARANCE_CM",
+    "DEFAULT_ROTATION_ALLOWED_DEGREES",
+    "DEFAULT_UNIT",
+    "ID_PATTERN",
+    "RECOMMENDED_YIELD_CEIL_UNIT_CM",
+]
+
