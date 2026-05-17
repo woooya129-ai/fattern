@@ -19,8 +19,8 @@ Commercial use, production use, paid consulting, resale, hosted service use, or 
 ## Features
 
 - Extracts piece candidates from closed DXF LWPOLYLINE and R12 POLYLINE entities
-- Calculates area, perimeter, and bounding boxes
-- Creates rough marker layouts from fabric width, rotation rules, and clearance
+- Calculates area, perimeter, bounding boxes, and source polygon outlines
+- Creates polygon-aware rough marker layouts from fabric width, rotation rules, and clearance
 - Validates overlap, fabric width, and grainline rules
 - Renders SVG previews
 - Generates Markdown reports
@@ -81,10 +81,12 @@ python -m unittest discover -s tests
 The current implementation is MVP-scoped.
 
 - Supports closed LWPOLYLINE and R12 `POLYLINE + VERTEX + SEQEND` input
-- Uses a bottom-left gap-reuse compact rough marker strategy with beam search
+- Uses a bottom-left gap-reuse polygon-aware compact rough marker strategy with beam search
 - Evaluates left/bottom, right-aligned, bottom-aligned, and clearance-contact placement candidates
+- SVG previews render the placed closed-polyline outlines instead of bbox rectangles
+- Falls back to conservative bbox placement with a `BBOX_FALLBACK_USED` warning when compact polygon candidates fail full-outline validation
 - DXF layer convention detection is limited
-- Advanced nesting optimization, print matching, and full commercial CAD compatibility are out of scope
+- Arbitrary-angle rotation, advanced curve flattening, print matching, and commercial-CAD-grade nesting are out of scope
 
 ## License Details
 

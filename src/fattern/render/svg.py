@@ -67,20 +67,33 @@ def render_marker_svg(result: LayoutResult, title: str = "Marker layout") -> str
                 "transform": f"translate({_fmt(placement.x)} {_fmt(placement.y)})",
             },
         )
-        ElementTree.SubElement(
-            group,
-            "rect",
-            {
-                "class": "piece-shape",
-                "x": "0",
-                "y": "0",
-                "width": _fmt(placement.width),
-                "height": _fmt(placement.height),
-                "fill": "#dbeafe",
-                "stroke": "#2563eb",
-                "stroke-width": _stroke_width(result),
-            },
-        )
+        if placement.outline_points:
+            ElementTree.SubElement(
+                group,
+                "polygon",
+                {
+                    "class": "piece-shape",
+                    "points": _points(placement.outline_points),
+                    "fill": "#dbeafe",
+                    "stroke": "#2563eb",
+                    "stroke-width": _stroke_width(result),
+                },
+            )
+        else:
+            ElementTree.SubElement(
+                group,
+                "rect",
+                {
+                    "class": "piece-shape",
+                    "x": "0",
+                    "y": "0",
+                    "width": _fmt(placement.width),
+                    "height": _fmt(placement.height),
+                    "fill": "#dbeafe",
+                    "stroke": "#2563eb",
+                    "stroke-width": _stroke_width(result),
+                },
+            )
         label = ElementTree.SubElement(
             group,
             "text",
@@ -120,3 +133,7 @@ def _label_size(result: LayoutResult) -> str:
 def _fmt(value: float) -> str:
     text = f"{value:.6f}".rstrip("0").rstrip(".")
     return text if text else "0"
+
+
+def _points(points: Sequence[tuple[float, float]]) -> str:
+    return " ".join(f"{_fmt(point[0])},{_fmt(point[1])}" for point in points)

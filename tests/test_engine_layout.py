@@ -13,7 +13,7 @@ from fattern.engine import (
     validate_marker_layout,
 )
 from fattern.engine.models import PieceMetrics
-from fattern.geometry import BoundingBox
+from fattern.geometry import BoundingBox, bounding_box, polygon_area, polygon_perimeter
 
 
 def metric(piece_id: str, width: float, height: float, unit: str = "cm") -> PieceMetrics:
@@ -25,6 +25,19 @@ def metric(piece_id: str, width: float, height: float, unit: str = "cm") -> Piec
         perimeter=2.0 * (width + height),
         unit=unit,
         point_count=4,
+    )
+
+
+def polygon_metric(piece_id: str, points: tuple[tuple[float, float], ...], unit: str = "cm") -> PieceMetrics:
+    return PieceMetrics(
+        piece_id=piece_id,
+        layer="OUTLINE",
+        bbox=bounding_box(points),
+        area=polygon_area(points),
+        perimeter=polygon_perimeter(points),
+        unit=unit,
+        point_count=len(points),
+        points=points,
     )
 
 
@@ -79,7 +92,7 @@ class LayoutTests(unittest.TestCase):
         self.assertAlmostEqual(result.placements[2].x, 7.2)
         self.assertAlmostEqual(result.placements[2].y, 2.2)
 
-    def test_compact_layout_keeps_stacked_alternative_to_reduce_length(self) -> None:
+    def test_compact_layout_tries_larger_piece_order_to_reduce_length(self) -> None:
         metrics = MetricsResult(
             metrics=(
                 metric("piece_0001", 3.0, 2.0),
@@ -93,11 +106,32 @@ class LayoutTests(unittest.TestCase):
 
         self.assertFalse(result.has_blocker())
         self.assertAlmostEqual(result.marker_length, 5.0)
-        self.assertEqual(result.placements[0].piece_id, "piece_0001")
-        self.assertAlmostEqual(result.placements[1].x, 0.0)
-        self.assertAlmostEqual(result.placements[1].y, 2.2)
-        self.assertAlmostEqual(result.placements[2].x, 3.2)
-        self.assertAlmostEqual(result.placements[2].y, 0.0)
+        self.assertEqual(result.placements[0].piece_id, "piece_0003")
+        self.assertAlmostEqual(result.placements[1].x, 7.2)
+        self.assertAlmostEqual(result.placements[1].y, 0.0)
+        self.assertAlmostEqual(result.placements[2].x, 7.2)
+        self.assertAlmostEqual(result.placements[2].y, 2.2)
+
+    def test_polygon_layout_nests_inside_concave_gap(self) -> None:
+        metrics = MetricsResult(
+            metrics=(
+                polygon_metric(
+                    "piece_0001",
+                    ((0.0, 0.0), (4.0, 0.0), (4.0, 1.0), (1.0, 1.0), (1.0, 4.0), (0.0, 4.0)),
+                ),
+                polygon_metric("piece_0002", ((0.0, 0.0), (2.6, 0.0), (2.6, 2.6), (0.0, 2.6))),
+            ),
+            messages=(),
+        )
+
+        result = estimate_marker_layout(metrics, fabric_width=4.0)
+
+        self.assertFalse(result.has_blocker())
+        self.assertTrue(result.validity.no_overlap)
+        self.assertAlmostEqual(result.marker_length, 4.0)
+        self.assertAlmostEqual(result.placements[1].x, 1.4)
+        self.assertAlmostEqual(result.placements[1].y, 0.0)
+        self.assertTrue(result.placements[0].outline_points)
 
     def test_rotation_rule_is_respected(self) -> None:
         metrics = MetricsResult(metrics=(metric("piece_0001", 7.0, 3.0),), messages=())

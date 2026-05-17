@@ -47,6 +47,33 @@ def layout_result() -> LayoutResult:
     )
 
 
+def outlined_layout_result() -> LayoutResult:
+    return LayoutResult(
+        placements=(
+            LayoutPlacement(
+                piece_id="front_panel",
+                layer="OUTLINE",
+                x=0.0,
+                y=0.0,
+                width=4.0,
+                height=4.0,
+                rotation_degrees=0,
+                outline_points=((0.0, 4.0), (4.0, 4.0), (4.0, 3.0), (1.0, 3.0), (1.0, 0.0), (0.0, 0.0)),
+            ),
+        ),
+        fabric_width=4.0,
+        marker_length=4.0,
+        efficiency=0.4375,
+        clearance=0.2,
+        unit="cm",
+        no_overlap=True,
+        messages=(),
+        within_fabric_width=True,
+        total_piece_area=7.0,
+        rotation_allowed_degrees=(0, 180),
+    )
+
+
 class SvgRendererTests(unittest.TestCase):
     def test_renders_fabric_boundary_and_layout_placements(self) -> None:
         svg = render_marker_svg(layout_result())
@@ -64,6 +91,15 @@ class SvgRendererTests(unittest.TestCase):
         self.assertEqual(pieces[0].attrib["transform"], "translate(0 0)")
         self.assertEqual(pieces[1].attrib["transform"], "translate(4.2 0)")
         self.assertEqual(pieces[1].attrib["data-rotation"], "180")
+
+    def test_renders_original_piece_outline_when_available(self) -> None:
+        svg = render_marker_svg(outlined_layout_result())
+        root = ElementTree.fromstring(svg)
+
+        polygon = root.find(".//{http://www.w3.org/2000/svg}polygon[@class='piece-shape']")
+        self.assertIsNotNone(polygon)
+        self.assertEqual(polygon.attrib["points"], "0,4 4,4 4,3 1,3 1,0 0,0")
+        self.assertIsNone(root.find(".//{http://www.w3.org/2000/svg}rect[@class='piece-shape']"))
 
     def test_labels_and_attributes_are_escaped(self) -> None:
         svg = render_marker_svg(layout_result())

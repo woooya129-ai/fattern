@@ -60,8 +60,9 @@ Layout
   - two pieces fit within fabric width
   - fabric width overflow moves to next row
   - compact layout reuses gaps above shorter pieces
-  - compact layout keeps stacked alternatives to reduce marker length
+  - compact layout tries larger-piece ordering to reduce marker length
   - layout candidate search evaluates edge-aligned and clearance-contact positions
+  - polygon-aware layout nests pieces into concave gaps when outlines do not overlap
   - rotation not allowed is respected
   - clearance 0.2cm is applied
   - marker_length is deterministic
@@ -136,7 +137,8 @@ Hallucination guard
 SVG
   - viewBox ratio uses fabric_width and marker_length
   - fabric boundary rect exists
-  - piece polygon path count matches placements
+  - piece polygon outline count matches placements when outline points are available
+  - renderer falls back to bbox rectangles when outline points are unavailable
   - piece label count matches placements
   - missing grainline warning has data-warning
   - script is absent

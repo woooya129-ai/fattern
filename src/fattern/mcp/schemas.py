@@ -182,7 +182,7 @@ TOOL_DEFINITIONS = (
     },
     {
         "name": "render_marker_svg",
-        "description": "Render a stored marker layout as SVG when a renderer is available.",
+        "description": "Render a stored marker layout as an SVG artifact.",
         "inputSchema": RENDER_MARKER_SVG_INPUT,
     },
     {

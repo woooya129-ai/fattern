@@ -1,9 +1,11 @@
-"""Deterministic bbox-based marker layout."""
+"""Deterministic polygon-aware marker layout."""
 
 from __future__ import annotations
 
 from collections.abc import Sequence
+from math import hypot
 
+from fattern.geometry import Point
 from fattern.geometry.polygon import EPSILON
 from fattern.schemas import (
     DEFAULT_CLEARANCE_CM,
@@ -22,8 +24,10 @@ from .models import (
 )
 
 VALID_ROTATIONS = (0, 90, 180, 270)
-COMPACT_LAYOUT_BEAM_WIDTH = 24
-MAX_CANDIDATE_PLACEMENTS_PER_STATE = 32
+COMPACT_LAYOUT_BEAM_WIDTH = 4
+MAX_CANDIDATE_PLACEMENTS_PER_STATE = 6
+MAX_COLLISION_OUTLINE_POINTS = 16
+COMPLEX_OUTLINE_POINT_THRESHOLD = 600
 COORDINATE_KEY_PRECISION = 9
 
 
@@ -46,8 +50,8 @@ def estimate_compact_bbox_layout(
     if input_messages:
         return _blocked_layout_result(fabric_width, clearance, layout_unit, rotations, input_messages)
 
-    placements = _best_compact_layout(metrics, rotations, fabric_width, clearance)
-    if placements is None:
+    layout = _best_compact_layout(metrics, rotations, fabric_width, clearance)
+    if layout is None:
         blocked_piece = _first_piece_exceeding_width(metrics, rotations, fabric_width)
         piece_id = blocked_piece.piece_id if blocked_piece is not None else "piece"
         return _blocked_layout_result(
@@ -63,12 +67,14 @@ def estimate_compact_bbox_layout(
                 ),
             ),
         )
+    placements, used_bbox_fallback = layout
 
     marker_length = _marker_length(placements)
     total_piece_area = sum(metric.area for metric in metrics)
     marker_area = fabric_width * marker_length
     efficiency = total_piece_area / marker_area if marker_area > EPSILON else 0.0
-    validity, validation_messages = validate_marker_layout(placements, fabric_width)
+    validity, validation_messages = validate_marker_layout(placements, fabric_width, clearance)
+    layout_messages = _layout_messages(used_bbox_fallback)
 
     return LayoutResult(
         placements=tuple(placements),
@@ -78,7 +84,7 @@ def estimate_compact_bbox_layout(
         clearance=clearance,
         unit=layout_unit,
         no_overlap=validity.no_overlap,
-        messages=validation_messages,
+        messages=(*layout_messages, *validation_messages),
         within_fabric_width=validity.within_fabric_width,
         overlaps=validity.overlaps,
         total_piece_area=total_piece_area,
@@ -125,13 +131,14 @@ def estimate_bbox_shelf_layout(
 def validate_marker_layout(
     placements: Sequence[LayoutPlacement],
     fabric_width: float,
+    clearance: float = 0.0,
 ) -> tuple[LayoutValidity, tuple[EngineMessage, ...]]:
     width_violations = tuple(
         placement
         for placement in placements
         if placement.x < -EPSILON or placement.right > fabric_width + EPSILON
     )
-    overlaps = _find_overlaps(placements)
+    overlaps = _find_overlaps(placements, clearance)
     messages: list[EngineMessage] = []
 
     if width_violations:
@@ -164,8 +171,8 @@ def validate_marker_layout(
     )
 
 
-def validate_no_overlap(placements: Sequence[LayoutPlacement]) -> tuple[EngineMessage, ...]:
-    overlaps = _find_overlaps(placements)
+def validate_no_overlap(placements: Sequence[LayoutPlacement], clearance: float = 0.0) -> tuple[EngineMessage, ...]:
+    overlaps = _find_overlaps(placements, clearance)
     if not overlaps:
         return ()
     pair_text = ", ".join(f"{overlap.first_piece_id}/{overlap.second_piece_id}" for overlap in overlaps)
@@ -277,23 +284,38 @@ def _blocked_layout_result(
     )
 
 
+def _layout_messages(used_bbox_fallback: bool) -> tuple[EngineMessage, ...]:
+    if not used_bbox_fallback:
+        return ()
+    return (
+        EngineMessage(
+            code="BBOX_FALLBACK_USED",
+            message="Polygon-aware compact search did not pass full-outline validation; bbox fallback layout was used.",
+            severity="warning",
+        ),
+    )
+
+
 def _best_compact_layout(
     metrics: tuple[PieceMetrics, ...],
     rotations: tuple[int, ...],
     fabric_width: float,
     clearance: float,
-) -> tuple[LayoutPlacement, ...] | None:
+) -> tuple[tuple[LayoutPlacement, ...], bool] | None:
     layouts: list[tuple[int, tuple[LayoutPlacement, ...]]] = []
-    for order_index, ordered_metrics in enumerate(_metric_orders(metrics)):
+    for order_index, ordered_metrics in enumerate(_metric_orders_for_layout(metrics)):
         placements = _place_bottom_left(ordered_metrics, rotations, fabric_width, clearance)
         if placements is not None:
             layouts.append((order_index, placements))
 
     if not layouts:
-        return None
+        fallback = _place_bbox_shelf_layout(metrics, rotations, fabric_width, clearance)
+        if fallback is None:
+            return None
+        return fallback, True
 
     _order_index, best = min(layouts, key=lambda item: _layout_score(item[1], item[0]))
-    return best
+    return best, False
 
 
 def _metric_orders(metrics: tuple[PieceMetrics, ...]) -> tuple[tuple[PieceMetrics, ...], ...]:
@@ -315,6 +337,13 @@ def _metric_orders(metrics: tuple[PieceMetrics, ...]) -> tuple[tuple[PieceMetric
     add(tuple(sorted(indexed, key=lambda item: (-item[1].bbox.height, -item[1].bbox.width, item[0]))))
     add(tuple(sorted(indexed, key=lambda item: (-item[1].bbox.width, -item[1].bbox.height, item[0]))))
     return tuple(ordered)
+
+
+def _metric_orders_for_layout(metrics: tuple[PieceMetrics, ...]) -> tuple[tuple[PieceMetrics, ...], ...]:
+    orders = _metric_orders(metrics)
+    if sum(len(metric.points) for metric in metrics) > COMPLEX_OUTLINE_POINT_THRESHOLD:
+        return orders[:2]
+    return orders
 
 
 def _place_bottom_left(
@@ -339,7 +368,54 @@ def _place_bottom_left(
 
         states = _trim_ranked_layouts(ranked_states, COMPACT_LAYOUT_BEAM_WIDTH)
 
-    return min(states, key=lambda placements: _layout_score(placements, 0))
+    exact_states = tuple(placements for placements in states if not _find_overlaps(placements, clearance))
+    if not exact_states:
+        return None
+    return min(exact_states, key=lambda placements: _layout_score(placements, 0))
+
+
+def _place_bbox_shelf_layout(
+    metrics: tuple[PieceMetrics, ...],
+    rotations: tuple[int, ...],
+    fabric_width: float,
+    clearance: float,
+) -> tuple[LayoutPlacement, ...] | None:
+    placements: list[LayoutPlacement] = []
+    row_x = 0.0
+    row_y = 0.0
+    row_height = 0.0
+
+    for metric in metrics:
+        orientation = _select_bbox_orientation(metric, rotations, fabric_width, row_x, clearance)
+        if orientation is None and row_x > EPSILON:
+            row_x = 0.0
+            row_y += row_height + clearance
+            row_height = 0.0
+            orientation = _select_bbox_orientation(metric, rotations, fabric_width, row_x, clearance)
+
+        if orientation is None:
+            return None
+
+        width, height = _oriented_dimensions(metric, orientation)
+        placement_x = _next_shelf_x(row_x, clearance)
+        outline_points = _oriented_outline_points(metric, orientation)
+        placements.append(
+            LayoutPlacement(
+                piece_id=metric.piece_id,
+                layer=metric.layer,
+                x=placement_x,
+                y=row_y,
+                width=width,
+                height=height,
+                rotation_degrees=orientation,
+                outline_points=outline_points,
+                collision_points=_downsample_outline_points(outline_points, MAX_COLLISION_OUTLINE_POINTS),
+            )
+        )
+        row_x = placement_x + width
+        row_height = max(row_height, height)
+
+    return tuple(placements)
 
 
 def _find_bottom_left_position(
@@ -366,6 +442,8 @@ def _candidate_placements(
         width, height = _oriented_dimensions(metric, rotation)
         if width > fabric_width + EPSILON:
             continue
+        outline_points = _oriented_outline_points(metric, rotation)
+        collision_points = _downsample_outline_points(outline_points, MAX_COLLISION_OUTLINE_POINTS)
         x_candidates, y_candidates = _candidate_coordinates(placements, clearance, width, height, fabric_width)
         for y in y_candidates:
             for x in x_candidates:
@@ -379,6 +457,8 @@ def _candidate_placements(
                     width=width,
                     height=height,
                     rotation_degrees=rotation,
+                    outline_points=outline_points,
+                    collision_points=collision_points,
                 )
                 if _has_clearance_conflict(candidate, placements, clearance):
                     continue
@@ -415,7 +495,23 @@ def _has_clearance_conflict(
     placements: Sequence[LayoutPlacement],
     clearance: float,
 ) -> bool:
-    return any(_rectangles_overlap_with_clearance(candidate, placed, clearance) for placed in placements)
+    return any(_placements_conflict_with_clearance(candidate, placed, clearance) for placed in placements)
+
+
+def _placements_conflict_with_clearance(
+    first: LayoutPlacement,
+    second: LayoutPlacement,
+    clearance: float,
+) -> bool:
+    if not _rectangles_overlap_with_clearance(first, second, clearance):
+        return False
+    if first.collision_points and second.collision_points:
+        return _polygons_conflict_with_clearance(
+            _absolute_collision_points(first),
+            _absolute_collision_points(second),
+            clearance,
+        )
+    return True
 
 
 def _rectangles_overlap_with_clearance(
@@ -430,6 +526,147 @@ def _rectangles_overlap_with_clearance(
         or second.bottom + clearance <= first.y + EPSILON
     )
     return not separated
+
+
+def _polygons_conflict_with_clearance(
+    first: tuple[Point, ...],
+    second: tuple[Point, ...],
+    clearance: float,
+) -> bool:
+    if not _polygon_bounds_overlap_with_clearance(first, second, clearance):
+        return False
+    if _polygons_touch_or_overlap(first, second):
+        return True
+    if clearance <= EPSILON:
+        return False
+    return _polygons_within_clearance(first, second, clearance)
+
+
+def _polygon_bounds_overlap_with_clearance(
+    first: tuple[Point, ...],
+    second: tuple[Point, ...],
+    clearance: float,
+) -> bool:
+    first_min_x, first_min_y, first_max_x, first_max_y = _point_bounds(first)
+    second_min_x, second_min_y, second_max_x, second_max_y = _point_bounds(second)
+    separated = (
+        first_max_x + clearance <= second_min_x + EPSILON
+        or second_max_x + clearance <= first_min_x + EPSILON
+        or first_max_y + clearance <= second_min_y + EPSILON
+        or second_max_y + clearance <= first_min_y + EPSILON
+    )
+    return not separated
+
+
+def _point_bounds(points: tuple[Point, ...]) -> tuple[float, float, float, float]:
+    xs = tuple(point[0] for point in points)
+    ys = tuple(point[1] for point in points)
+    return min(xs), min(ys), max(xs), max(ys)
+
+
+def _polygons_touch_or_overlap(first: tuple[Point, ...], second: tuple[Point, ...]) -> bool:
+    for first_start, first_end in _polygon_edges(first):
+        for second_start, second_end in _polygon_edges(second):
+            if _segments_intersect(first_start, first_end, second_start, second_end):
+                return True
+
+    return _point_in_polygon(first[0], second) or _point_in_polygon(second[0], first)
+
+
+def _polygons_within_clearance(first: tuple[Point, ...], second: tuple[Point, ...], clearance: float) -> bool:
+    for first_start, first_end in _polygon_edges(first):
+        for second_start, second_end in _polygon_edges(second):
+            if _segment_distance_without_intersection(first_start, first_end, second_start, second_end) + EPSILON < clearance:
+                return True
+    return False
+
+
+def _polygon_edges(points: tuple[Point, ...]) -> tuple[tuple[Point, Point], ...]:
+    if len(points) < 2:
+        return ()
+    return tuple((point, points[(index + 1) % len(points)]) for index, point in enumerate(points))
+
+
+def _segments_intersect(first_start: Point, first_end: Point, second_start: Point, second_end: Point) -> bool:
+    first_cross_start = _cross(first_start, first_end, second_start)
+    first_cross_end = _cross(first_start, first_end, second_end)
+    second_cross_start = _cross(second_start, second_end, first_start)
+    second_cross_end = _cross(second_start, second_end, first_end)
+
+    if (
+        first_cross_start > EPSILON
+        and first_cross_end < -EPSILON
+        or first_cross_start < -EPSILON
+        and first_cross_end > EPSILON
+    ) and (
+        second_cross_start > EPSILON
+        and second_cross_end < -EPSILON
+        or second_cross_start < -EPSILON
+        and second_cross_end > EPSILON
+    ):
+        return True
+
+    return (
+        abs(first_cross_start) <= EPSILON
+        and _point_on_segment(second_start, first_start, first_end)
+        or abs(first_cross_end) <= EPSILON
+        and _point_on_segment(second_end, first_start, first_end)
+        or abs(second_cross_start) <= EPSILON
+        and _point_on_segment(first_start, second_start, second_end)
+        or abs(second_cross_end) <= EPSILON
+        and _point_on_segment(first_end, second_start, second_end)
+    )
+
+
+def _cross(start: Point, end: Point, point: Point) -> float:
+    return (end[0] - start[0]) * (point[1] - start[1]) - (end[1] - start[1]) * (point[0] - start[0])
+
+
+def _point_on_segment(point: Point, start: Point, end: Point) -> bool:
+    return (
+        min(start[0], end[0]) - EPSILON <= point[0] <= max(start[0], end[0]) + EPSILON
+        and min(start[1], end[1]) - EPSILON <= point[1] <= max(start[1], end[1]) + EPSILON
+    )
+
+
+def _point_in_polygon(point: Point, polygon: tuple[Point, ...]) -> bool:
+    inside = False
+    for start, end in _polygon_edges(polygon):
+        if abs(_cross(start, end, point)) <= EPSILON and _point_on_segment(point, start, end):
+            return True
+        if (start[1] > point[1]) == (end[1] > point[1]):
+            continue
+        crossing_x = (end[0] - start[0]) * (point[1] - start[1]) / (end[1] - start[1]) + start[0]
+        if point[0] < crossing_x:
+            inside = not inside
+    return inside
+
+
+def _segment_distance_without_intersection(
+    first_start: Point,
+    first_end: Point,
+    second_start: Point,
+    second_end: Point,
+) -> float:
+    return min(
+        _point_segment_distance(first_start, second_start, second_end),
+        _point_segment_distance(first_end, second_start, second_end),
+        _point_segment_distance(second_start, first_start, first_end),
+        _point_segment_distance(second_end, first_start, first_end),
+    )
+
+
+def _point_segment_distance(point: Point, start: Point, end: Point) -> float:
+    dx = end[0] - start[0]
+    dy = end[1] - start[1]
+    length_squared = dx * dx + dy * dy
+    if length_squared <= EPSILON:
+        return hypot(point[0] - start[0], point[1] - start[1])
+
+    ratio = ((point[0] - start[0]) * dx + (point[1] - start[1]) * dy) / length_squared
+    clamped = min(1.0, max(0.0, ratio))
+    projection = (start[0] + clamped * dx, start[1] + clamped * dy)
+    return hypot(point[0] - projection[0], point[1] - projection[1])
 
 
 def _first_piece_exceeding_width(
@@ -522,7 +759,7 @@ def _trim_ranked_layouts(
     limit: int,
 ) -> tuple[tuple[LayoutPlacement, ...], ...]:
     states: list[tuple[LayoutPlacement, ...]] = []
-    seen: set[tuple[tuple[str, float, float, float, float], ...]] = set()
+    seen: set[tuple[tuple[str, float, float, float, float, int], ...]] = set()
     for _score, placements in sorted(ranked_states, key=lambda item: item[0]):
         key = _layout_state_key(placements)
         if key in seen:
@@ -539,7 +776,7 @@ def _trim_ranked_placements(
     limit: int,
 ) -> tuple[LayoutPlacement, ...]:
     placements: list[LayoutPlacement] = []
-    seen: set[tuple[str, float, float, float, float]] = set()
+    seen: set[tuple[str, float, float, float, float, int]] = set()
     for _score, placement in sorted(ranked, key=lambda item: item[0]):
         key = _placement_geometry_key(placement)
         if key in seen:
@@ -553,17 +790,18 @@ def _trim_ranked_placements(
 
 def _layout_state_key(
     placements: tuple[LayoutPlacement, ...],
-) -> tuple[tuple[str, float, float, float, float], ...]:
+) -> tuple[tuple[str, float, float, float, float, int], ...]:
     return tuple(_placement_geometry_key(placement) for placement in placements)
 
 
-def _placement_geometry_key(placement: LayoutPlacement) -> tuple[str, float, float, float, float]:
+def _placement_geometry_key(placement: LayoutPlacement) -> tuple[str, float, float, float, float, int]:
     return (
         placement.piece_id,
         round(placement.x, COORDINATE_KEY_PRECISION),
         round(placement.y, COORDINATE_KEY_PRECISION),
         round(placement.width, COORDINATE_KEY_PRECISION),
         round(placement.height, COORDINATE_KEY_PRECISION),
+        placement.rotation_degrees,
     )
 
 
@@ -576,6 +814,66 @@ def _bounded_coordinates(values: set[float], upper_bound: float | None) -> tuple
             continue
         bounded.add(_clean_coordinate(value))
     return tuple(sorted(bounded))
+
+
+def _oriented_outline_points(metric: PieceMetrics, rotation_degrees: int) -> tuple[Point, ...]:
+    if not metric.points:
+        return ()
+
+    width = metric.bbox.width
+    height = metric.bbox.height
+    local_points = tuple(
+        (
+            _clean_coordinate(point[0] - metric.bbox.min_x),
+            _clean_coordinate(metric.bbox.max_y - point[1]),
+        )
+        for point in metric.points
+    )
+    return tuple(_rotate_outline_point(point, width, height, rotation_degrees) for point in local_points)
+
+
+def _rotate_outline_point(point: Point, width: float, height: float, rotation_degrees: int) -> Point:
+    x, y = point
+    if rotation_degrees == 90:
+        return _clean_coordinate(height - y), _clean_coordinate(x)
+    if rotation_degrees == 180:
+        return _clean_coordinate(width - x), _clean_coordinate(height - y)
+    if rotation_degrees == 270:
+        return _clean_coordinate(y), _clean_coordinate(width - x)
+    return _clean_coordinate(x), _clean_coordinate(y)
+
+
+def _absolute_outline_points(placement: LayoutPlacement) -> tuple[Point, ...]:
+    return tuple(
+        (
+            _clean_coordinate(placement.x + point[0]),
+            _clean_coordinate(placement.y + point[1]),
+        )
+        for point in placement.outline_points
+    )
+
+
+def _absolute_collision_points(placement: LayoutPlacement) -> tuple[Point, ...]:
+    return tuple(
+        (
+            _clean_coordinate(placement.x + point[0]),
+            _clean_coordinate(placement.y + point[1]),
+        )
+        for point in placement.collision_points
+    )
+
+
+def _downsample_outline_points(points: tuple[Point, ...], max_points: int) -> tuple[Point, ...]:
+    if len(points) <= max_points or max_points <= 0:
+        return points
+
+    indexes = {int(index * len(points) / max_points) for index in range(max_points)}
+    min_x_index = min(range(len(points)), key=lambda index: points[index][0])
+    max_x_index = max(range(len(points)), key=lambda index: points[index][0])
+    min_y_index = min(range(len(points)), key=lambda index: points[index][1])
+    max_y_index = max(range(len(points)), key=lambda index: points[index][1])
+    indexes.update((min_x_index, max_x_index, min_y_index, max_y_index))
+    return tuple(point for index, point in enumerate(points) if index in indexes)
 
 
 def _marker_length(placements: Sequence[LayoutPlacement]) -> float:
@@ -592,13 +890,52 @@ def _oriented_dimensions(metric: PieceMetrics, rotation_degrees: int) -> tuple[f
     return metric.bbox.width, metric.bbox.height
 
 
-def _find_overlaps(placements: Sequence[LayoutPlacement]) -> tuple[LayoutOverlap, ...]:
+def _select_bbox_orientation(
+    metric: PieceMetrics,
+    rotations: tuple[int, ...],
+    fabric_width: float,
+    row_x: float,
+    clearance: float,
+) -> int | None:
+    placement_x = _next_shelf_x(row_x, clearance)
+    for rotation in rotations:
+        width, _height = _oriented_dimensions(metric, rotation)
+        if placement_x + width <= fabric_width + EPSILON:
+            return rotation
+    return None
+
+
+def _next_shelf_x(row_x: float, clearance: float) -> float:
+    if row_x <= EPSILON:
+        return 0.0
+    return row_x + clearance
+
+
+def _find_overlaps(placements: Sequence[LayoutPlacement], clearance: float = 0.0) -> tuple[LayoutOverlap, ...]:
     overlaps: list[LayoutOverlap] = []
     for first_index, first in enumerate(placements):
         for second in placements[first_index + 1 :]:
-            if _rectangles_overlap(first, second):
+            if _placements_conflict_for_validation(first, second, clearance):
                 overlaps.append(LayoutOverlap(first_piece_id=first.piece_id, second_piece_id=second.piece_id))
     return tuple(overlaps)
+
+
+def _placements_conflict_for_validation(
+    first: LayoutPlacement,
+    second: LayoutPlacement,
+    clearance: float,
+) -> bool:
+    if first.outline_points and second.outline_points:
+        if not _rectangles_overlap_with_clearance(first, second, clearance):
+            return False
+        return _polygons_conflict_with_clearance(
+            _absolute_outline_points(first),
+            _absolute_outline_points(second),
+            clearance,
+        )
+    if clearance > EPSILON:
+        return _rectangles_overlap_with_clearance(first, second, clearance)
+    return _rectangles_overlap(first, second)
 
 
 def _rectangles_overlap(first: LayoutPlacement, second: LayoutPlacement) -> bool:

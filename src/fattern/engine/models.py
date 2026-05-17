@@ -70,6 +70,7 @@ class PieceMetrics:
     perimeter: float
     unit: str
     point_count: int
+    points: tuple[Point, ...] = ()
 
 
 @dataclass(frozen=True)
@@ -90,6 +91,8 @@ class LayoutPlacement:
     width: float
     height: float
     rotation_degrees: int
+    outline_points: tuple[Point, ...] = ()
+    collision_points: tuple[Point, ...] = ()
 
     @property
     def right(self) -> float:

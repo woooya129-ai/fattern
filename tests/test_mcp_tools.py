@@ -296,7 +296,7 @@ class McpToolTests(unittest.TestCase):
         self.assertNotIn(str(self.store.root), json.dumps(response))
         self.assertNotIn(self.temp_dir, json.dumps(response))
 
-    def test_render_marker_svg_validates_layout_id_without_generating_svg_path(self) -> None:
+    def test_render_marker_svg_registers_svg_artifact_without_leaking_path(self) -> None:
         job_id, layout_id = self._create_rectangle_layout()
 
         response = self.registry.call_tool(
@@ -306,9 +306,12 @@ class McpToolTests(unittest.TestCase):
 
         serialized = json.dumps(response)
         self.assertEqual(response["errors"], [])
-        self.assertEqual(response["warnings"][0]["code"], "SVG_RENDERER_UNAVAILABLE")
-        self.assertFalse(response["rendered"])
-        self.assertIsNone(response["artifact_id"])
+        self.assertEqual(response["warnings"], [])
+        self.assertTrue(response["rendered"])
+        self.assertTrue(response["artifact_id"].startswith("artifact_"))
+        artifact = self.store.get_artifact(job_id, response["artifact_id"])
+        self.assertEqual(artifact.file_name, "marker_preview.svg")
+        self.assertIn("<svg", artifact.path.read_text(encoding="utf-8"))
         self.assertNotIn("svg_uri", response)
         self.assertNotIn(str(self.store.root), serialized)
         self.assertNotIn(self.temp_dir, serialized)

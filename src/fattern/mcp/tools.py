@@ -19,6 +19,7 @@ from fattern.engine import (
 )
 from fattern.engine.metrics import calculate_piece_set_metrics
 from fattern.jobs import JobError, JobStore, SecurityError
+from fattern.render import render_marker_svg
 
 from .schemas import TOOL_SCHEMAS, list_tool_definitions
 from .validation import ToolValidationError, validate_input
@@ -190,15 +191,21 @@ class McpToolRegistry:
     def _render_marker_svg(self, arguments: dict[str, Any]) -> ToolResponse:
         job_id = arguments["job_id"]
         layout = self.store.get_layout(job_id, arguments["layout_id"])
+        artifact_id = self.store.register_artifact(
+            job_id,
+            "marker_preview.svg",
+            render_marker_svg(layout),
+            media_type="image/svg+xml",
+        )
         return {
             "job_id": job_id,
             "layout_id": arguments["layout_id"],
-            "rendered": False,
-            "artifact_id": None,
+            "rendered": True,
+            "artifact_id": artifact_id,
             "width": layout.fabric_width,
             "height": layout.marker_length,
             "unit": layout.unit,
-            "warnings": [_message("SVG_RENDERER_UNAVAILABLE", "SVG renderer is not available yet.", "warning")],
+            "warnings": [],
             "errors": [],
         }
 

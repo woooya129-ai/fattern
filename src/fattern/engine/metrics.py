@@ -39,6 +39,7 @@ def calculate_piece_metrics(piece: PolylineCandidate, unit: str = DEFAULT_UNIT) 
                 perimeter=polygon_perimeter(points),
                 unit=unit,
                 point_count=len(points),
+                points=points,
             ),
         ),
         messages=(),
