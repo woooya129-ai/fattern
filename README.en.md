@@ -44,6 +44,28 @@ $env:PYTHONPATH = "src"
 python -m fattern --help
 ```
 
+## How To Use
+
+The easiest workflow is the `input/` folder workflow.
+
+1. Create `input/`.
+2. Put one DXF file in it.
+3. Create `input/answers.json`.
+4. Run `python -m fattern estimate`.
+5. Open the newly created folder under `output/`.
+
+Read the outputs in this order:
+
+1. `marker_report.md`: human-readable summary with fabric width, marker length, efficiency, and warnings.
+2. `marker_preview.svg`: visual marker preview. Check width overflow and rotations.
+3. `report.csv`: per-piece coordinates and rotations for spreadsheets or downstream automation.
+4. `result.json`: tool-chain result for MCP, Codex, Claude Code, or scripts.
+5. `marker_report.pdf`: one-page report for sharing.
+
+When DXF layers are unclear, inspect `layer_audit` from `parse_dxf` or `extract_pattern_pieces`. It shows entity counts by layer, grainline candidate source, confidence, and mapping status. Numeric layer `7` remains an AAMA/ASTM candidate only; Fattern does not treat it as a verified CAD vendor mapping.
+
+Layout still uses the existing BLF + beam-search structure. Recent updates add shelf compaction, a longest-edge-down attempt, and overlap geometry caching for better small-case packing and fewer repeated collision calculations. This is still not commercial CAD-grade final nesting.
+
 ## One-Line Use
 
 Put one DXF file and `answers.json` in `input/`, then run:
@@ -225,6 +247,8 @@ Stop the chain if a tool returns a `severity=blocker` error.
 - Closed LWPOLYLINE
 - R12 `POLYLINE + VERTEX + SEQEND`
 - Bbox baseline + polygon-aware compact rough marker layout
+- Shelf compaction, longest-edge-down attempt, overlap geometry cache
+- DXF layer checks through `layer_audit`
 - SVG rendering from placed outlines
 - Average seam-allowance rough expansion
 - DXF autoscale

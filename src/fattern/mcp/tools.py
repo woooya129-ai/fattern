@@ -6,6 +6,7 @@ import json
 import re
 from base64 import b64decode
 from binascii import Error as Base64DecodeError
+from collections.abc import Sequence
 from copy import deepcopy
 from dataclasses import replace
 from math import hypot
@@ -117,6 +118,7 @@ class McpToolRegistry:
         response: ToolResponse = {
             "job_id": job_id,
             "entity_summary": _entity_summary(result),
+            "layer_audit": _layer_audit(result, ()),
             "warnings": warnings,
             "errors": errors,
         }
@@ -163,6 +165,7 @@ class McpToolRegistry:
             "job_id": job_id,
             "piece_set_id": piece_set_id,
             "piece_summary": [_piece_summary(piece) for piece in pieces],
+            "layer_audit": _layer_audit(parse_result, arguments.get("grainline_layer_names") or []),
             "warnings": warnings,
             "errors": [],
         }
@@ -689,6 +692,58 @@ def _entity_summary(result: Any) -> dict[str, Any]:
         "line_entity_count": len(result.line_entities),
         "text_entity_count": len(result.text_entities),
     }
+
+
+def _layer_audit(result: Any, grainline_layer_names: Sequence[str]) -> list[dict[str, Any]]:
+    explicit_layers = {name.strip().lower() for name in grainline_layer_names if name.strip()}
+    rows: dict[str, dict[str, Any]] = {}
+
+    def row(layer: str | None) -> dict[str, Any]:
+        key = layer or "0"
+        if key not in rows:
+            rows[key] = {
+                "layer": key,
+                "entity_counts": {},
+                "grainline_rule_source": None,
+                "grainline_confidence": None,
+                "mapping_status": "not_grainline_candidate",
+            }
+        return rows[key]
+
+    def increment(layer: str | None, entity_type: str) -> None:
+        item = row(layer)
+        counts = item["entity_counts"]
+        counts[entity_type] = counts.get(entity_type, 0) + 1
+
+    for piece in result.piece_candidates:
+        increment(piece.layer, "PIECE_CANDIDATE")
+    for excluded in result.excluded_candidates:
+        increment(excluded.layer, excluded.entity_type)
+    for text in result.text_entities:
+        increment(text.layer, "TEXT")
+    for line in result.line_entities:
+        item = row(line.layer)
+        counts = item["entity_counts"]
+        counts["LINE"] = counts.get("LINE", 0) + 1
+        confidence, source = _grainline_line_confidence(line, explicit_layers)
+        if confidence <= 0:
+            continue
+        if item["grainline_confidence"] is None or confidence > item["grainline_confidence"]:
+            item["grainline_rule_source"] = source
+            item["grainline_confidence"] = confidence
+            item["mapping_status"] = _layer_mapping_status(source)
+
+    return [rows[layer] for layer in sorted(rows)]
+
+
+def _layer_mapping_status(source: str) -> str:
+    if source == "explicit":
+        return "explicit_grainline_rule"
+    if source == "aama_astm_candidate":
+        return "aama_astm_candidate_unverified"
+    if source:
+        return "deterministic_candidate"
+    return "not_grainline_candidate"
 
 
 def _piece_summary(piece: PolylineCandidate) -> dict[str, Any]:

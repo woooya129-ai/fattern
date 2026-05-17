@@ -12,6 +12,7 @@ from fattern.engine import (
     estimate_marker_layout,
     validate_marker_layout,
 )
+import fattern.engine.layout as layout_module
 from fattern.engine.models import PieceMetrics
 from fattern.geometry import BoundingBox, bounding_box, polygon_area, polygon_perimeter
 
@@ -111,6 +112,34 @@ class LayoutTests(unittest.TestCase):
         self.assertAlmostEqual(result.placements[1].y, 0.0)
         self.assertAlmostEqual(result.placements[2].x, 7.2)
         self.assertAlmostEqual(result.placements[2].y, 2.2)
+
+    def test_longest_edge_order_uses_piece_id_tiebreaker(self) -> None:
+        metrics = (metric("piece_b", 3.0, 4.0), metric("piece_a", 4.0, 3.0))
+
+        orders = layout_module._metric_orders(metrics)
+
+        self.assertIn(("piece_a", "piece_b"), [tuple(item.piece_id for item in order) for order in orders])
+
+    def test_longest_edge_down_rotation_attempt_prefers_vertical_major_edge(self) -> None:
+        wide = metric("wide", 8.0, 2.0)
+
+        normal_rank = layout_module._rotation_rank(wide, 0, 0, (0, 90), True)
+        rotated_rank = layout_module._rotation_rank(wide, 90, 1, (0, 90), True)
+
+        self.assertLess(rotated_rank, normal_rank)
+
+    def test_compact_within_shelf_reuses_space_above_next_row(self) -> None:
+        placements = (
+            LayoutPlacement("tall", "OUTLINE", 0.0, 0.0, 5.0, 5.0, 0),
+            LayoutPlacement("short", "OUTLINE", 5.2, 0.0, 2.0, 2.0, 0),
+            LayoutPlacement("next", "OUTLINE", 5.2, 5.2, 2.0, 2.0, 0),
+        )
+
+        compacted = layout_module._compact_within_shelf(placements, fabric_width=7.2, clearance=0.2)
+
+        moved = next(placement for placement in compacted if placement.piece_id == "next")
+        self.assertAlmostEqual(moved.x, 5.2)
+        self.assertAlmostEqual(moved.y, 2.2)
 
     def test_polygon_layout_nests_inside_concave_gap(self) -> None:
         metrics = MetricsResult(
@@ -262,6 +291,30 @@ class LayoutTests(unittest.TestCase):
 
         self.assertFalse(validity.no_overlap)
         self.assertEqual(messages[0].code, "OVERLAP_DETECTED")
+
+    def test_overlap_validation_reuses_absolute_outline_cache(self) -> None:
+        outline = ((0.0, 0.0), (3.0, 0.0), (3.0, 2.0), (0.0, 2.0))
+        placements = (
+            LayoutPlacement("piece_0001", "OUTLINE", 0.0, 0.0, 3.0, 2.0, 0, outline_points=outline),
+            LayoutPlacement("piece_0002", "OUTLINE", 1.0, 0.0, 3.0, 2.0, 0, outline_points=outline),
+            LayoutPlacement("piece_0003", "OUTLINE", 2.0, 0.0, 3.0, 2.0, 0, outline_points=outline),
+        )
+        original = layout_module._absolute_outline_points
+        calls: list[str] = []
+
+        def counting_absolute_points(placement: LayoutPlacement) -> tuple[tuple[float, float], ...]:
+            calls.append(placement.piece_id)
+            return original(placement)
+
+        layout_module._absolute_outline_points = counting_absolute_points
+        try:
+            validity, messages = validate_marker_layout(placements, fabric_width=10.0)
+        finally:
+            layout_module._absolute_outline_points = original
+
+        self.assertFalse(validity.no_overlap)
+        self.assertEqual(messages[0].code, "OVERLAP_DETECTED")
+        self.assertLessEqual(len(calls), len(placements))
 
     def test_fabric_width_validation_returns_width_error(self) -> None:
         placements = (LayoutPlacement("piece_0001", "OUTLINE", 1.0, 0.0, 5.0, 2.0, 0),)

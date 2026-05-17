@@ -208,6 +208,8 @@ class McpToolTests(unittest.TestCase):
         self.assertRegex(parse_response["dxf_parse_id"], ID_RE)
         self.assertTrue(parse_response["dxf_parse_id"].startswith("dxf_parse_"))
         self.assertEqual(parse_response["entity_summary"]["entity_count"], 1)
+        self.assertEqual(parse_response["layer_audit"][0]["layer"], "OUTLINE")
+        self.assertEqual(parse_response["layer_audit"][0]["entity_counts"], {"PIECE_CANDIDATE": 1})
         self.assertNotIn("points", json.dumps(parse_response))
 
         extract_response = self.registry.call_tool(
@@ -826,7 +828,37 @@ class McpToolTests(unittest.TestCase):
         self.assertEqual(response["piece_summary"][0]["size"], "M")
         self.assertEqual(response["piece_summary"][0]["has_grainline"], True)
         self.assertEqual(response["piece_summary"][0]["grainline_layer"], "GRAINLINE")
+        grainline_audit = next(item for item in response["layer_audit"] if item["layer"] == "GRAINLINE")
+        self.assertEqual(grainline_audit["mapping_status"], "deterministic_candidate")
+        self.assertEqual(grainline_audit["grainline_confidence"], 0.8)
         self.assertIn("GRAINLINE_LAYER_CANDIDATE_DETECTED", [warning["code"] for warning in response["warnings"]])
+
+    def test_layer_audit_flags_numeric_aama_astm_candidate_as_unverified(self) -> None:
+        job_id = self._create_job()
+        file_id = self.store.register_input_file(job_id, "numeric-layer.dxf", _numeric_layer_dxf())
+        parse_response = self.registry.call_tool(
+            "parse_dxf",
+            {"schema_version": "1.0", "job_id": job_id, "file_id": file_id, "unit_hint": "cm"},
+        )
+
+        response = self.registry.call_tool(
+            "extract_pattern_pieces",
+            {
+                "schema_version": "1.0",
+                "job_id": job_id,
+                "dxf_parse_id": parse_response["dxf_parse_id"],
+                "extraction_mode": "closed_polylines_only",
+                "outline_layer_names": [],
+                "grainline_layer_names": [],
+            },
+        )
+
+        numeric_audit = next(item for item in response["layer_audit"] if item["layer"] == "7")
+        self.assertEqual(response["errors"], [])
+        self.assertEqual(response["piece_summary"][0]["has_grainline"], True)
+        self.assertEqual(numeric_audit["mapping_status"], "aama_astm_candidate_unverified")
+        self.assertEqual(numeric_audit["grainline_confidence"], 0.6)
+        self.assertIn("AAMA_ASTM_LAYER_MAPPING_UNVERIFIED", [warning["code"] for warning in response["warnings"]])
 
     def test_calculate_marker_yield_allows_one_way_when_grainline_is_detected(self) -> None:
         job_id = self._create_job()
@@ -1041,6 +1073,35 @@ def _semantic_dxf() -> str:
             "0", "EOF",
         ]
     )
+
+
+def _numeric_layer_dxf() -> bytes:
+    return "\n".join(
+        [
+            "0", "SECTION",
+            "2", "ENTITIES",
+            "0", "LWPOLYLINE",
+            "8", "OUTLINE",
+            "90", "4",
+            "70", "1",
+            "10", "0",
+            "20", "0",
+            "10", "4",
+            "20", "0",
+            "10", "4",
+            "20", "3",
+            "10", "0",
+            "20", "3",
+            "0", "LINE",
+            "8", "7",
+            "10", "2",
+            "20", "0.5",
+            "11", "2",
+            "21", "2.5",
+            "0", "ENDSEC",
+            "0", "EOF",
+        ]
+    ).encode("utf-8")
 
 
 if __name__ == "__main__":

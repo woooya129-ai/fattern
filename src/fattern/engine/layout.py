@@ -618,15 +618,24 @@ def _best_compact_layout(
     clearance: float,
 ) -> tuple[tuple[LayoutPlacement, ...], bool] | None:
     layouts: list[tuple[int, tuple[LayoutPlacement, ...], bool]] = []
+    orders = _metric_orders_for_layout(metrics)
+    rotation_attempts = _rotation_attempts_for_layout(metrics, rotations)
     fallback = _place_bbox_shelf_layout(metrics, rotations, fabric_width, clearance)
     if fallback is not None:
-        layouts.append((len(_metric_orders(metrics)), fallback, True))
+        layouts.append((len(orders) * len(rotation_attempts), _compact_within_shelf(fallback, fabric_width, clearance), True))
 
-    for order_index, ordered_metrics in enumerate(_metric_orders_for_layout(metrics)):
-        placements = _place_bottom_left(ordered_metrics, rotations, fabric_width, clearance)
-        if placements is not None:
-            refined = _refine_compact_layout(placements, fabric_width, clearance)
-            layouts.append((order_index, refined, False))
+    for order_index, ordered_metrics in enumerate(orders):
+        for attempt_index, prefer_longest_edge_down in enumerate(rotation_attempts):
+            placements = _place_bottom_left(
+                ordered_metrics,
+                rotations,
+                fabric_width,
+                clearance,
+                prefer_longest_edge_down=prefer_longest_edge_down,
+            )
+            if placements is not None:
+                refined = _refine_compact_layout(placements, fabric_width, clearance)
+                layouts.append((order_index * len(rotation_attempts) + attempt_index, refined, False))
 
     if not layouts:
         return None
@@ -654,7 +663,13 @@ def _metric_orders(metrics: tuple[PieceMetrics, ...]) -> tuple[tuple[PieceMetric
     add(tuple(sorted(indexed, key=lambda item: (-_packing_difficulty(item[1]), item[0]))))
     add(tuple(sorted(indexed, key=lambda item: (-item[1].bbox.height, -item[1].bbox.width, item[0]))))
     add(tuple(sorted(indexed, key=lambda item: (-item[1].bbox.width, -item[1].bbox.height, item[0]))))
+    add(tuple(sorted(indexed, key=_longest_edge_order_key)))
     return tuple(ordered)
+
+
+def _longest_edge_order_key(item: tuple[int, PieceMetrics]) -> tuple[float, float, str, int]:
+    index, metric = item
+    return (-max(metric.bbox.width, metric.bbox.height), -metric.area, metric.piece_id, index)
 
 
 def _packing_difficulty(metric: PieceMetrics) -> float:
@@ -673,17 +688,37 @@ def _metric_orders_for_layout(metrics: tuple[PieceMetrics, ...]) -> tuple[tuple[
     return orders
 
 
+def _rotation_attempts_for_layout(
+    metrics: tuple[PieceMetrics, ...],
+    rotations: tuple[int, ...],
+) -> tuple[bool, ...]:
+    if len(rotations) < 2:
+        return (False,)
+    if sum(len(metric.points) for metric in metrics) > COMPLEX_OUTLINE_POINT_THRESHOLD:
+        return (False,)
+    return False, True
+
+
 def _place_bottom_left(
     metrics: tuple[PieceMetrics, ...],
     rotations: tuple[int, ...],
     fabric_width: float,
     clearance: float,
+    *,
+    prefer_longest_edge_down: bool = False,
 ) -> tuple[LayoutPlacement, ...] | None:
     states: tuple[tuple[LayoutPlacement, ...], ...] = ((),)
     for metric in metrics:
         ranked_states: list[tuple[tuple[float, float, float, int, int], tuple[LayoutPlacement, ...]]] = []
         for parent_rank, placements in enumerate(states):
-            candidates = _candidate_placements(metric, placements, rotations, fabric_width, clearance)
+            candidates = _candidate_placements(
+                metric,
+                placements,
+                rotations,
+                fabric_width,
+                clearance,
+                prefer_longest_edge_down=prefer_longest_edge_down,
+            )
             for candidate_rank, placement in enumerate(candidates):
                 next_placements = (*placements, placement)
                 ranked_states.append(
@@ -766,6 +801,14 @@ def _refine_compact_layout(
         if not changed:
             break
     return current
+
+
+def _compact_within_shelf(
+    placements: tuple[LayoutPlacement, ...],
+    fabric_width: float,
+    clearance: float,
+) -> tuple[LayoutPlacement, ...]:
+    return _refine_compact_layout(placements, fabric_width, clearance)
 
 
 def _refinement_order(placements: tuple[LayoutPlacement, ...]) -> tuple[int, ...]:
@@ -855,8 +898,11 @@ def _candidate_placements(
     rotations: tuple[int, ...],
     fabric_width: float,
     clearance: float,
+    *,
+    prefer_longest_edge_down: bool = False,
 ) -> tuple[LayoutPlacement, ...]:
     ranked: list[tuple[tuple[float, float, float, float, int], LayoutPlacement]] = []
+    collision_cache = _CollisionGeometryCache()
 
     for rotation_index, rotation in enumerate(rotations):
         width, height = _oriented_dimensions(metric, rotation)
@@ -880,9 +926,15 @@ def _candidate_placements(
                     outline_points=outline_points,
                     collision_points=collision_points,
                 )
-                if _has_clearance_conflict(candidate, placements, clearance):
+                if _has_clearance_conflict(candidate, placements, clearance, collision_cache):
                     continue
-                score = _placement_score(placements, candidate, fabric_width, clearance, rotation_index)
+                score = _placement_score(
+                    placements,
+                    candidate,
+                    fabric_width,
+                    clearance,
+                    _rotation_rank(metric, rotation, rotation_index, rotations, prefer_longest_edge_down),
+                )
                 ranked.append((score, candidate))
 
     return _trim_ranked_placements(ranked, MAX_CANDIDATE_PLACEMENTS_PER_STATE)
@@ -919,22 +971,26 @@ def _has_clearance_conflict(
     candidate: LayoutPlacement,
     placements: Sequence[LayoutPlacement],
     clearance: float,
+    cache: "_CollisionGeometryCache | None" = None,
 ) -> bool:
-    return any(_placements_conflict_with_clearance(candidate, placed, clearance) for placed in placements)
+    return any(_placements_conflict_with_clearance(candidate, placed, clearance, cache) for placed in placements)
 
 
 def _placements_conflict_with_clearance(
     first: LayoutPlacement,
     second: LayoutPlacement,
     clearance: float,
+    cache: "_CollisionGeometryCache | None" = None,
 ) -> bool:
     if not _rectangles_overlap_with_clearance(first, second, clearance):
         return False
     if first.collision_points and second.collision_points:
+        active_cache = cache or _CollisionGeometryCache()
         return _polygons_conflict_with_clearance(
-            _absolute_collision_points(first),
-            _absolute_collision_points(second),
+            active_cache.absolute_collision_points(first),
+            active_cache.absolute_collision_points(second),
             clearance,
+            active_cache,
         )
     return True
 
@@ -957,12 +1013,13 @@ def _polygons_conflict_with_clearance(
     first: tuple[Point, ...],
     second: tuple[Point, ...],
     clearance: float,
+    cache: "_CollisionGeometryCache | None" = None,
 ) -> bool:
-    if not _polygon_bounds_overlap_with_clearance(first, second, clearance):
+    if not _polygon_bounds_overlap_with_clearance(first, second, clearance, cache):
         return False
 
-    first_edges = _polygon_edges_with_bounds(first)
-    second_edges = _polygon_edges_with_bounds(second)
+    first_edges = cache.polygon_edges_with_bounds(first) if cache is not None else _polygon_edges_with_bounds(first)
+    second_edges = cache.polygon_edges_with_bounds(second) if cache is not None else _polygon_edges_with_bounds(second)
     for first_start, first_end, first_bounds in first_edges:
         for second_start, second_end, second_bounds in second_edges:
             if _bounds_overlap(first_bounds, second_bounds) and _segments_intersect(
@@ -991,9 +1048,14 @@ def _polygon_bounds_overlap_with_clearance(
     first: tuple[Point, ...],
     second: tuple[Point, ...],
     clearance: float,
+    cache: "_CollisionGeometryCache | None" = None,
 ) -> bool:
-    first_min_x, first_min_y, first_max_x, first_max_y = _point_bounds(first)
-    second_min_x, second_min_y, second_max_x, second_max_y = _point_bounds(second)
+    if cache is None:
+        first_min_x, first_min_y, first_max_x, first_max_y = _point_bounds(first)
+        second_min_x, second_min_y, second_max_x, second_max_y = _point_bounds(second)
+    else:
+        first_min_x, first_min_y, first_max_x, first_max_y = cache.point_bounds(first)
+        second_min_x, second_min_y, second_max_x, second_max_y = cache.point_bounds(second)
     separated = (
         first_max_x + clearance <= second_min_x + EPSILON
         or second_max_x + clearance <= first_min_x + EPSILON
@@ -1197,15 +1259,29 @@ def _placement_score(
     candidate: LayoutPlacement,
     fabric_width: float,
     clearance: float,
-    rotation_index: int,
+    rotation_rank: int,
 ) -> tuple[float, float, float, float, int]:
     return (
         max(_marker_length(placements), candidate.bottom),
         -_contact_score(candidate, placements, fabric_width, clearance),
         candidate.y,
         candidate.x,
-        rotation_index,
+        rotation_rank,
     )
+
+
+def _rotation_rank(
+    metric: PieceMetrics,
+    rotation: int,
+    rotation_index: int,
+    rotations: tuple[int, ...],
+    prefer_longest_edge_down: bool,
+) -> int:
+    if not prefer_longest_edge_down:
+        return rotation_index
+    width, height = _oriented_dimensions(metric, rotation)
+    longest_edge_down_rank = 0 if height + EPSILON >= width else 1
+    return longest_edge_down_rank * len(rotations) + rotation_index
 
 
 def _contact_score(
@@ -1357,6 +1433,47 @@ def _absolute_collision_points(placement: LayoutPlacement) -> tuple[Point, ...]:
     )
 
 
+class _CollisionGeometryCache:
+    def __init__(self) -> None:
+        self._outline_points: dict[tuple[object, ...], tuple[Point, ...]] = {}
+        self._collision_points: dict[tuple[object, ...], tuple[Point, ...]] = {}
+        self._bounds: dict[tuple[Point, ...], tuple[float, float, float, float]] = {}
+        self._edges: dict[tuple[Point, ...], tuple[tuple[Point, Point, tuple[float, float, float, float]], ...]] = {}
+
+    def absolute_outline_points(self, placement: LayoutPlacement) -> tuple[Point, ...]:
+        key = (*_placement_geometry_key(placement), placement.outline_points)
+        points = self._outline_points.get(key)
+        if points is None:
+            points = _absolute_outline_points(placement)
+            self._outline_points[key] = points
+        return points
+
+    def absolute_collision_points(self, placement: LayoutPlacement) -> tuple[Point, ...]:
+        key = (*_placement_geometry_key(placement), placement.collision_points)
+        points = self._collision_points.get(key)
+        if points is None:
+            points = _absolute_collision_points(placement)
+            self._collision_points[key] = points
+        return points
+
+    def point_bounds(self, points: tuple[Point, ...]) -> tuple[float, float, float, float]:
+        bounds = self._bounds.get(points)
+        if bounds is None:
+            bounds = _point_bounds(points)
+            self._bounds[points] = bounds
+        return bounds
+
+    def polygon_edges_with_bounds(
+        self,
+        points: tuple[Point, ...],
+    ) -> tuple[tuple[Point, Point, tuple[float, float, float, float]], ...]:
+        edges = self._edges.get(points)
+        if edges is None:
+            edges = _polygon_edges_with_bounds(points)
+            self._edges[points] = edges
+        return edges
+
+
 def _downsample_outline_points(points: tuple[Point, ...], max_points: int) -> tuple[Point, ...]:
     if len(points) <= max_points or max_points <= 0:
         return points
@@ -1407,9 +1524,10 @@ def _next_shelf_x(row_x: float, clearance: float) -> float:
 
 def _find_overlaps(placements: Sequence[LayoutPlacement], clearance: float = 0.0) -> tuple[LayoutOverlap, ...]:
     overlaps: list[LayoutOverlap] = []
+    cache = _CollisionGeometryCache()
     for first_index, first in enumerate(placements):
         for second in placements[first_index + 1 :]:
-            if _placements_conflict_for_validation(first, second, clearance):
+            if _placements_conflict_for_validation(first, second, clearance, cache):
                 overlaps.append(LayoutOverlap(first_piece_id=first.piece_id, second_piece_id=second.piece_id))
     return tuple(overlaps)
 
@@ -1418,14 +1536,17 @@ def _placements_conflict_for_validation(
     first: LayoutPlacement,
     second: LayoutPlacement,
     clearance: float,
+    cache: "_CollisionGeometryCache | None" = None,
 ) -> bool:
     if first.outline_points and second.outline_points:
         if not _rectangles_overlap_with_clearance(first, second, clearance):
             return False
+        active_cache = cache or _CollisionGeometryCache()
         return _polygons_conflict_with_clearance(
-            _absolute_outline_points(first),
-            _absolute_outline_points(second),
+            active_cache.absolute_outline_points(first),
+            active_cache.absolute_outline_points(second),
             clearance,
+            active_cache,
         )
     if clearance > EPSILON:
         return _rectangles_overlap_with_clearance(first, second, clearance)

@@ -44,6 +44,28 @@ $env:PYTHONPATH = "src"
 python -m fattern --help
 ```
 
+## How to use
+
+가장 쉬운 사용법은 `input/` 폴더 방식이다.
+
+1. `input/` 폴더를 만든다.
+2. DXF 파일을 하나 넣는다.
+3. `input/answers.json`을 만든다.
+4. `python -m fattern estimate`를 실행한다.
+5. `output/` 아래 새로 생긴 폴더에서 결과를 확인한다.
+
+처음 보면 아래 순서로 확인하면 된다.
+
+1. `marker_report.md`: 사람이 읽는 요약. 원단 폭, marker length, 효율, warning을 먼저 본다.
+2. `marker_preview.svg`: 배치 그림. 패턴이 원단 폭 밖으로 나갔는지, 회전이 의도와 맞는지 본다.
+3. `report.csv`: 피스별 좌표와 회전값. 스프레드시트나 후속 자동화에 쓴다.
+4. `result.json`: tool chain 결과. MCP, Codex, Claude Code 같은 자동화가 읽기 좋다.
+5. `marker_report.pdf`: 공유용 단일 페이지 리포트.
+
+DXF 레이어가 애매하면 MCP의 `parse_dxf` 또는 `extract_pattern_pieces` 결과에서 `layer_audit`을 확인한다. 레이어별 entity 수, grainline 후보 근거, confidence, mapping status가 나온다. 숫자 레이어 `7`은 AAMA/ASTM 후보로만 표시되며, 검증된 CAD vendor mapping으로 확정하지 않는다.
+
+배치는 기존 BLF + beam search 골격을 유지한다. v0.7.0 이후에는 shelf compact 보조 step, longest-edge-down attempt, overlap geometry cache가 들어가서 작은 케이스의 빈 공간 재사용과 충돌 검사 반복 비용이 개선됐다. 그래도 상용 CAD급 최종 nesting은 아니다.
+
 ## 한 줄 사용
 
 DXF를 `input/` 폴더에 넣고 `input/answers.json`을 만든 뒤 실행한다.
@@ -225,6 +247,8 @@ export_artifacts
 - closed LWPOLYLINE
 - R12 `POLYLINE + VERTEX + SEQEND`
 - bbox baseline + polygon-aware compact rough marker
+- shelf compact, longest-edge-down attempt, overlap geometry cache
+- `layer_audit` 기반 DXF 레이어 점검
 - 피스 outline 기반 SVG 렌더링
 - 평균 시접 rough 확장
 - DXF autoscale
