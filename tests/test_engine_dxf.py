@@ -30,7 +30,7 @@ class DxfParserTests(unittest.TestCase):
 
         self.assertTrue(result.has_blocker())
         self.assertEqual(result.messages[0].code, "UNSUPPORTED_DXF_VERSION")
-        self.assertEqual(result.acad_version, "AC1009")
+        self.assertEqual(result.acad_version, "AC1006")
 
     def test_lwpolyline_rectangle_returns_closed_candidate(self) -> None:
         result = parse_dxf_file(FIXTURE_DIR / "rectangle_lwpolyline.dxf")
@@ -39,6 +39,22 @@ class DxfParserTests(unittest.TestCase):
         self.assertEqual(result.summary.total_entities, 1)
         self.assertEqual(result.summary.counts_by_type["LWPOLYLINE"], 1)
         self.assertEqual(result.summary.closed_lwpolyline_count, 1)
+        self.assertEqual(len(result.piece_candidates), 1)
+        candidate = result.piece_candidates[0]
+        self.assertEqual(candidate.piece_id, "piece_0001")
+        self.assertEqual(candidate.layer, "OUTLINE")
+        self.assertTrue(candidate.closed)
+        self.assertEqual(candidate.points, ((0.0, 0.0), (4.0, 0.0), (4.0, 3.0), (0.0, 3.0)))
+
+    def test_r12_polyline_rectangle_returns_closed_candidate(self) -> None:
+        result = parse_dxf_file(FIXTURE_DIR / "rectangle_polyline_r12.dxf")
+
+        self.assertFalse(result.has_blocker())
+        self.assertEqual(result.acad_version, "AC1009")
+        self.assertEqual(result.summary.total_entities, 1)
+        self.assertEqual(result.summary.counts_by_type["POLYLINE"], 1)
+        self.assertEqual(result.summary.polyline_count, 1)
+        self.assertEqual(result.summary.closed_polyline_count, 1)
         self.assertEqual(len(result.piece_candidates), 1)
         candidate = result.piece_candidates[0]
         self.assertEqual(candidate.piece_id, "piece_0001")

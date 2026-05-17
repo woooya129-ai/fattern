@@ -18,7 +18,7 @@ Commercial use, production use, paid consulting, resale, hosted service use, or 
 
 ## Features
 
-- Extracts piece candidates from closed DXF LWPOLYLINE entities
+- Extracts piece candidates from closed DXF LWPOLYLINE and R12 POLYLINE entities
 - Calculates area, perimeter, and bounding boxes
 - Creates rough marker layouts from fabric width, rotation rules, and clearance
 - Validates overlap, fabric width, and grainline rules
@@ -80,7 +80,7 @@ python -m unittest discover -s tests
 
 The current implementation is MVP-scoped.
 
-- Focused on closed LWPOLYLINE input
+- Supports closed LWPOLYLINE and R12 `POLYLINE + VERTEX + SEQEND` input
 - Uses a bbox shelf rough marker strategy
 - DXF layer convention detection is limited
 - Advanced nesting optimization, print matching, and full commercial CAD compatibility are out of scope

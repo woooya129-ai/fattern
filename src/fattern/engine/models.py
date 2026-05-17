@@ -25,6 +25,9 @@ class EntitySummary:
     closed_lwpolyline_count: int
     open_lwpolyline_count: int
     unsupported_entity_types: tuple[str, ...] = ()
+    polyline_count: int = 0
+    closed_polyline_count: int = 0
+    open_polyline_count: int = 0
 
 
 @dataclass(frozen=True)

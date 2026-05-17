@@ -281,8 +281,29 @@ def _call_tool(
 ) -> ToolResponse:
     response = registry.call_tool(name, arguments)
     state["tool_calls"].append(name)
-    state["warnings"].extend(response.get("warnings", []))
+    _extend_unique_warnings(state["warnings"], response.get("warnings", []))
     return response
+
+
+def _extend_unique_warnings(target: list[dict[str, Any]], warnings: list[dict[str, Any]]) -> None:
+    seen = {
+        (
+            warning.get("code"),
+            warning.get("message"),
+            warning.get("severity"),
+        )
+        for warning in target
+    }
+    for warning in warnings:
+        key = (
+            warning.get("code"),
+            warning.get("message"),
+            warning.get("severity"),
+        )
+        if key in seen:
+            continue
+        target.append(warning)
+        seen.add(key)
 
 
 def _blocked(response: ToolResponse) -> bool:

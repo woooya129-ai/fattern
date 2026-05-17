@@ -142,6 +142,7 @@ class OrchestrationChainTests(unittest.TestCase):
         self.assertEqual(result["stopped_at"], "extract_pattern_pieces")
         self.assertEqual(result["errors"][0]["code"], "NO_PATTERN_PIECES_FOUND")
         self.assertEqual(result["tool_calls"], ["create_job", "register_input_file", "parse_dxf", "extract_pattern_pieces"])
+        self.assertEqual([warning["code"] for warning in result["warnings"]], ["NON_CLOSED_CONTOUR"])
         self.assertNotIn("piece_set_id", result)
         self.assertNotIn("svg_artifact_id", result)
 

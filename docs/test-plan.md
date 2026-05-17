@@ -44,6 +44,7 @@ DXF parser
   - empty file returns PARSE_FAILED or standard blocker
   - malformed DXF returns PARSE_FAILED
   - LWPOLYLINE rectangle returns one closed candidate
+  - R12 POLYLINE rectangle returns one closed candidate
   - non-closed contour returns NON_CLOSED_CONTOUR or excluded piece
   - unsupported DXF returns UNSUPPORTED_DXF_VERSION
 
