@@ -24,7 +24,7 @@ Commercial use, production use, paid consulting, resale, hosted service use, or 
 - Validates overlap, fabric width, and grainline rules
 - Renders SVG previews
 - Generates Markdown reports
-- Includes MCP tool wrappers and orchestration regression tests
+- Includes an MCP stdio server and orchestration regression tests
 
 ## CLI
 
@@ -45,6 +45,26 @@ On Windows, the local wrapper also works:
 ```powershell
 .\fattern.cmd --help
 ```
+
+## MCP stdio
+
+Run Fattern as an MCP stdio server:
+
+```powershell
+python -m fattern mcp-stdio
+```
+
+Example configuration:
+
+```json
+{
+  "command": "python",
+  "args": ["-m", "fattern", "mcp-stdio"],
+  "cwd": "C:\\obs\\fattern"
+}
+```
+
+DXF paths are not accepted as MCP tool input. Clients should call `register_input_file` with `file_name` and `content_base64`, then pass the returned `file_id` to `parse_dxf`.
 
 ## Development
 

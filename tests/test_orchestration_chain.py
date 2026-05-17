@@ -105,7 +105,14 @@ class OrchestrationChainTests(unittest.TestCase):
         self.assertEqual(result["stopped_at"], "completed")
         self.assertEqual(
             result["tool_calls"],
-            ["create_job", "parse_dxf", "extract_pattern_pieces", "calculate_piece_metrics", "estimate_marker_layout"],
+            [
+                "create_job",
+                "register_input_file",
+                "parse_dxf",
+                "extract_pattern_pieces",
+                "calculate_piece_metrics",
+                "estimate_marker_layout",
+            ],
         )
         self.assertTrue(result["layout_id"].startswith("layout_"))
         self.assertTrue(result["svg_artifact_id"].startswith("artifact_"))
@@ -124,7 +131,7 @@ class OrchestrationChainTests(unittest.TestCase):
         self.assertEqual(result["status"], "blocked")
         self.assertEqual(result["stopped_at"], "parse_dxf")
         self.assertEqual(result["errors"][0]["code"], "PARSE_FAILED")
-        self.assertEqual(result["tool_calls"], ["create_job", "parse_dxf"])
+        self.assertEqual(result["tool_calls"], ["create_job", "register_input_file", "parse_dxf"])
         self.assertNotIn("dxf_parse_id", result)
         self.assertNotIn("svg_artifact_id", result)
 
@@ -134,7 +141,7 @@ class OrchestrationChainTests(unittest.TestCase):
         self.assertEqual(result["status"], "blocked")
         self.assertEqual(result["stopped_at"], "extract_pattern_pieces")
         self.assertEqual(result["errors"][0]["code"], "NO_PATTERN_PIECES_FOUND")
-        self.assertEqual(result["tool_calls"], ["create_job", "parse_dxf", "extract_pattern_pieces"])
+        self.assertEqual(result["tool_calls"], ["create_job", "register_input_file", "parse_dxf", "extract_pattern_pieces"])
         self.assertNotIn("piece_set_id", result)
         self.assertNotIn("svg_artifact_id", result)
 
@@ -151,7 +158,7 @@ class OrchestrationChainTests(unittest.TestCase):
         self.assertEqual(result["errors"][0]["code"], "SELF_INTERSECTION")
         self.assertEqual(
             result["tool_calls"],
-            ["create_job", "parse_dxf", "extract_pattern_pieces", "calculate_piece_metrics"],
+            ["create_job", "register_input_file", "parse_dxf", "extract_pattern_pieces", "calculate_piece_metrics"],
         )
         self.assertNotIn("metrics_id", result)
         self.assertNotIn("svg_artifact_id", result)

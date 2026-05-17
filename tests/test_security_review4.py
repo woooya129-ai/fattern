@@ -19,6 +19,7 @@ SCHEMA_DIR = ROOT / "schemas"
 
 TOOL_INPUT_DEFS = {
     "create_job": "create_job_input",
+    "register_input_file": "register_input_file_input",
     "parse_dxf": "parse_dxf_input",
     "extract_pattern_pieces": "extract_pattern_pieces_input",
     "calculate_piece_metrics": "calculate_piece_metrics_input",

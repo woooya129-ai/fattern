@@ -5,6 +5,7 @@ import shutil
 import sys
 import tempfile
 import unittest
+from base64 import b64encode
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -36,6 +37,7 @@ class McpToolTests(unittest.TestCase):
             names,
             {
                 "create_job",
+                "register_input_file",
                 "parse_dxf",
                 "extract_pattern_pieces",
                 "calculate_piece_metrics",
@@ -123,13 +125,55 @@ class McpToolTests(unittest.TestCase):
         self.assertNotIn("workspace_uri", response)
         self.assertNotIn(str(self.store.root), json.dumps(response))
 
+    def test_register_input_file_returns_file_id_without_accepting_paths(self) -> None:
+        job_id = self._create_job()
+        content = b64encode((FIXTURE_DIR / "rectangle_lwpolyline.dxf").read_bytes()).decode("ascii")
+
+        response = self.registry.call_tool(
+            "register_input_file",
+            {"schema_version": "1.0", "job_id": job_id, "file_name": "sample.dxf", "content_base64": content},
+        )
+
+        serialized = json.dumps(response)
+        self.assertEqual(response["errors"], [])
+        self.assertRegex(response["file_id"], ID_RE)
+        self.assertTrue(response["file_id"].startswith("file_"))
+        self.assertNotIn("path", serialized.lower())
+        self.assertNotIn(str(self.store.root), serialized)
+
+    def test_register_input_file_rejects_invalid_base64(self) -> None:
+        job_id = self._create_job()
+
+        response = self.registry.call_tool(
+            "register_input_file",
+            {"schema_version": "1.0", "job_id": job_id, "file_name": "sample.dxf", "content_base64": "not_base64"},
+        )
+
+        self.assertEqual(response["errors"][0]["code"], "TOOL_VALIDATION_FAILED")
+
+    def test_register_input_file_rejects_path_like_file_name(self) -> None:
+        job_id = self._create_job()
+        content = b64encode(b"0\nEOF\n").decode("ascii")
+
+        response = self.registry.call_tool(
+            "register_input_file",
+            {"schema_version": "1.0", "job_id": job_id, "file_name": "../sample.dxf", "content_base64": content},
+        )
+
+        self.assertEqual(response["errors"][0]["code"], "INVALID_FILE_NAME")
+
     def test_wrapper_happy_path_uses_server_mapping(self) -> None:
         job_id = self._create_job()
-        file_id = self.store.register_input_file(
-            job_id,
-            "sample.dxf",
-            (FIXTURE_DIR / "rectangle_lwpolyline.dxf").read_bytes(),
+        register_response = self.registry.call_tool(
+            "register_input_file",
+            {
+                "schema_version": "1.0",
+                "job_id": job_id,
+                "file_name": "sample.dxf",
+                "content_base64": b64encode((FIXTURE_DIR / "rectangle_lwpolyline.dxf").read_bytes()).decode("ascii"),
+            },
         )
+        file_id = register_response["file_id"]
 
         parse_response = self.registry.call_tool(
             "parse_dxf",

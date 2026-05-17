@@ -73,6 +73,12 @@ Tool discovery
   - each tool has inputSchema
   - schema names match queue contract
 
+Transport
+  - stdio initialize returns tools capability
+  - stdio tools/list returns tool definitions
+  - stdio tools/call wraps structuredContent and isError
+  - stdout contains only JSON-RPC messages
+
 Validation
   - unknown fields return TOOL_VALIDATION_FAILED
   - invalid unit returns TOOL_VALIDATION_FAILED
@@ -88,6 +94,7 @@ Workspace security
 
 Wrappers
   - create_job returns opaque job_id only
+  - register_input_file accepts file_name + content_base64 and returns file_id
   - parse_dxf accepts file_id, not path
   - extract_pattern_pieces returns piece_set_id
   - calculate_piece_metrics returns metrics_id and metrics
@@ -106,7 +113,7 @@ Missing input
   - unknown unit asks for unit
 
 Tool chain
-  - create_job -> parse_dxf -> extract_pattern_pieces -> calculate_piece_metrics -> estimate_marker_layout -> render_marker_svg
+  - create_job -> register_input_file -> parse_dxf -> extract_pattern_pieces -> calculate_piece_metrics -> estimate_marker_layout -> render_marker_svg
   - blocker after parse_dxf stops chain
   - blocker after extract_pattern_pieces stops chain
   - SVG_RENDER_FAILED warning still returns JSON result
@@ -152,4 +159,3 @@ python -m unittest discover -s tests
 ```text
 pytest
 ```
-

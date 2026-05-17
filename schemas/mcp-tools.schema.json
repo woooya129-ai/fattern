@@ -33,6 +33,7 @@
           "type": "string",
           "enum": [
             "create_job",
+            "register_input_file",
             "parse_dxf",
             "extract_pattern_pieces",
             "calculate_piece_metrics",
@@ -66,6 +67,31 @@
           "type": "string",
           "maxLength": 500,
           "default": ""
+        }
+      }
+    },
+    "register_input_file_input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version", "job_id", "file_name", "content_base64"],
+      "properties": {
+        "schema_version": {
+          "type": "string",
+          "const": "1.0"
+        },
+        "job_id": {
+          "$ref": "#/$defs/opaque_id"
+        },
+        "file_name": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "content_base64": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 14000000,
+          "pattern": "^[A-Za-z0-9+/]*={0,2}$"
         }
       }
     },

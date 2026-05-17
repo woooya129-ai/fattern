@@ -8,11 +8,11 @@ from __future__ import annotations
 
 import html
 import re
+from base64 import b64encode
 from collections.abc import Iterable, Mapping
 from typing import Any
 
 from fattern.engine import EngineMessage, ExcludedCandidate, LayoutResult
-from fattern.jobs import JobError, SecurityError
 from fattern.mcp import McpToolRegistry
 from fattern.orchestration.intent import validate_user_intent
 from fattern.render import render_marker_svg
@@ -36,6 +36,7 @@ STOPPED_AT_VALUES = frozenset(
 
 CHAIN_STEPS = (
     "create_job",
+    "register_input_file",
     "parse_dxf",
     "extract_pattern_pieces",
     "calculate_piece_metrics",
@@ -114,10 +115,22 @@ def execute_marker_estimation(
     job_id = create_response["job_id"]
     state["job_id"] = job_id
 
-    try:
-        file_id = active_registry.store.register_input_file(job_id, dxf_file_name, dxf_content)
-    except (JobError, SecurityError) as exc:
-        return _local_blocker(state, "register_input_file", exc.code, exc.public_message)
+    data = dxf_content.encode("utf-8") if isinstance(dxf_content, str) else bytes(dxf_content)
+    register_response = _call_tool(
+        active_registry,
+        state,
+        "register_input_file",
+        {
+            "schema_version": "1.0",
+            "job_id": job_id,
+            "file_name": dxf_file_name,
+            "content_base64": b64encode(data).decode("ascii"),
+        },
+    )
+    if _blocked(register_response):
+        return _blocked_result(state, "register_input_file", register_response)
+
+    file_id = register_response["file_id"]
 
     parse_response = _call_tool(
         active_registry,

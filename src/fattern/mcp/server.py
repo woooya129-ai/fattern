@@ -1,4 +1,4 @@
-"""Minimal in-process MCP surface used by tests and future transports."""
+"""Transport-neutral MCP surface used by tests and stdio transport."""
 
 from __future__ import annotations
 

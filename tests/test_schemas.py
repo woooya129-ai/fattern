@@ -56,6 +56,7 @@ class SchemaContractTests(unittest.TestCase):
         defs = schema["$defs"]
         for name in [
             "create_job_input",
+            "register_input_file_input",
             "id_only_input",
             "parse_dxf_input",
             "extract_pattern_pieces_input",
@@ -80,8 +81,8 @@ class SchemaContractTests(unittest.TestCase):
         self.assertEqual(schema["$defs"]["opaque_id"]["pattern"], ID_PATTERN)
 
         for tool_schema in TOOL_SCHEMAS.values():
-            for field_schema in tool_schema["properties"].values():
-                if field_schema.get("pattern") is not None:
+            for field, field_schema in tool_schema["properties"].items():
+                if field.endswith("_id") and field_schema.get("pattern") is not None:
                     self.assertEqual(field_schema["pattern"], ID_PATTERN)
 
 

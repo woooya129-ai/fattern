@@ -18,6 +18,7 @@ classifiers = [
 
 [project.scripts]
 fattern = "fattern.cli:main"
+fattern-mcp = "fattern.mcp.stdio:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]

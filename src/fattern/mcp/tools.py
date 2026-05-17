@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import re
+from base64 import b64decode
+from binascii import Error as Base64DecodeError
 from copy import deepcopy
 from typing import Any, Callable
 
@@ -29,6 +31,7 @@ class McpToolRegistry:
         self.store = store or JobStore()
         self._handlers: dict[str, Callable[[dict[str, Any]], ToolResponse]] = {
             "create_job": self._create_job,
+            "register_input_file": self._register_input_file,
             "parse_dxf": self._parse_dxf,
             "extract_pattern_pieces": self._extract_pattern_pieces,
             "calculate_piece_metrics": self._calculate_piece_metrics,
@@ -64,6 +67,21 @@ class McpToolRegistry:
         )
         return {
             "job_id": record.job_id,
+            "warnings": [],
+            "errors": [],
+        }
+
+    def _register_input_file(self, arguments: dict[str, Any]) -> ToolResponse:
+        try:
+            content = b64decode(arguments["content_base64"], validate=True)
+        except (Base64DecodeError, ValueError):
+            return _error_response("TOOL_VALIDATION_FAILED", "Tool input validation failed.")
+
+        file_id = self.store.register_input_file(arguments["job_id"], arguments["file_name"], content)
+        return {
+            "job_id": arguments["job_id"],
+            "file_id": file_id,
+            "file_name": arguments["file_name"],
             "warnings": [],
             "errors": [],
         }

@@ -24,6 +24,23 @@ CREATE_JOB_INPUT = {
     },
 }
 
+REGISTER_INPUT_FILE_INPUT = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["schema_version", "job_id", "file_name", "content_base64"],
+    "properties": {
+        "schema_version": {"type": "string", "const": "1.0"},
+        "job_id": OPAQUE_ID_SCHEMA,
+        "file_name": {"type": "string", "minLength": 1, "maxLength": 120},
+        "content_base64": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 14_000_000,
+            "pattern": r"^[A-Za-z0-9+/]*={0,2}$",
+        },
+    },
+}
+
 PARSE_DXF_INPUT = {
     "type": "object",
     "additionalProperties": False,
@@ -137,6 +154,11 @@ TOOL_DEFINITIONS = (
         "name": "create_job",
         "description": "Create an isolated job workspace and return an opaque job ID.",
         "inputSchema": CREATE_JOB_INPUT,
+    },
+    {
+        "name": "register_input_file",
+        "description": "Register an input file from base64 content and return an opaque file ID.",
+        "inputSchema": REGISTER_INPUT_FILE_INPUT,
     },
     {
         "name": "parse_dxf",

@@ -19,7 +19,8 @@
 ## ORCH-002 Boundary
 
 - MCP tool chain 실행은 ORCH-002 범위다.
-- `create_job -> parse_dxf -> extract_pattern_pieces -> calculate_piece_metrics -> estimate_marker_layout -> render_marker_svg` 호출은 여기서 구현하지 않는다.
+- `create_job -> register_input_file -> parse_dxf -> extract_pattern_pieces -> calculate_piece_metrics -> estimate_marker_layout -> render_marker_svg` 호출은 여기서 구현하지 않는다.
+- `register_input_file`은 경로가 아니라 `file_name`과 `content_base64`만 받는다.
 - tool 응답의 `errors`에 `severity=blocker`가 있으면 다음 계산 tool을 호출하지 않아야 한다.
 - ORCH-001은 blocker 중단 규칙을 문서화만 하고 실행기는 만들지 않는다.
 

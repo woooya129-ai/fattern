@@ -22,6 +22,7 @@ from .security import (
 )
 
 DEFAULT_MAX_ARTIFACT_BYTES = 10 * 1024 * 1024
+DEFAULT_MAX_INPUT_BYTES = 10 * 1024 * 1024
 
 
 class JobError(ValueError):
@@ -105,13 +106,22 @@ class JobStore:
     def require_job(self, job_id: object) -> JobRecord:
         return self.get_job(job_id)
 
-    def register_input_file(self, job_id: object, file_name: object, content: bytes | str) -> str:
+    def register_input_file(
+        self,
+        job_id: object,
+        file_name: object,
+        content: bytes | str,
+        *,
+        max_bytes: int = DEFAULT_MAX_INPUT_BYTES,
+    ) -> str:
         record = self.get_job(job_id)
         safe_name = validate_input_filename(file_name)
         suffix = Path(safe_name).suffix.lower()
         file_id = self._new_id("file")
         internal_path = record.workspace_root / "inputs" / f"{file_id}{suffix}"
         data = content.encode("utf-8") if isinstance(content, str) else bytes(content)
+        if max_bytes <= 0 or len(data) > max_bytes:
+            raise SecurityError("INPUT_SIZE_LIMIT_EXCEEDED", "Input file exceeds the configured size limit.")
         internal_path.write_bytes(data)
         canonical_path = resolve_workspace_file(record.workspace_root, internal_path, allowed_suffixes=ALLOWED_INPUT_SUFFIXES)
         record.files[file_id] = FileRecord(file_id=file_id, path=canonical_path, original_name=safe_name)

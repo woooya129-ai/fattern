@@ -11,6 +11,7 @@ from typing import Sequence
 
 from fattern.jobs import JobStore
 from fattern.mcp import McpToolRegistry
+from fattern.mcp.stdio import serve_stdio
 from fattern.orchestration.chain import execute_marker_estimation
 from fattern.orchestration.intent import normalize_user_intent
 
@@ -20,6 +21,8 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = parser.parse_args(argv)
     if args.command == "estimate":
         return _estimate(args)
+    if args.command == "mcp-stdio":
+        return serve_stdio()
     parser.print_help()
     return 2
 
@@ -47,6 +50,8 @@ def _build_parser() -> argparse.ArgumentParser:
     estimate.add_argument("--rotation", default="0,180", help="Comma-separated allowed rotations. Default: 0,180.")
     estimate.add_argument("--clearance", type=float, default=0.2, help="Piece clearance. Default: 0.2.")
     estimate.add_argument("--out", type=Path, default=Path("fattern-output"), help="Output directory.")
+
+    subparsers.add_parser("mcp-stdio", help="Run the MCP server over stdio.")
     return parser
 
 

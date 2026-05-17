@@ -14,6 +14,7 @@
 - 허용 확장자는 `.dxf`, `.json`으로 제한한다.
 - 확장자 외 type 검증을 둔다.
 - 최대 파일 크기, DXF entity 수, 처리 시간 제한을 둔다.
+- MCP 입력 파일 등록은 경로가 아니라 `file_name`과 `content_base64`만 받는다.
 - archive 입력은 MVP에서 금지한다.
 
 ## MCP 서버
