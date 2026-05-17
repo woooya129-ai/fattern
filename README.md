@@ -92,6 +92,10 @@ output/
     result.json
 ```
 
+출력 예시:
+
+![Simple-T marker layout output example](docs/assets/simple-t-marker-preview.svg)
+
 ## 제일 쉬운 흐름
 
 1. `input/` 폴더를 만든다.

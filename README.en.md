@@ -92,6 +92,10 @@ output/
     result.json
 ```
 
+Output example:
+
+![Simple-T marker layout output example](docs/assets/simple-t-marker-preview.svg)
+
 ## Easiest Flow
 
 1. Create `input/`.
