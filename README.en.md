@@ -82,7 +82,10 @@ The current implementation is MVP-scoped.
 
 - Supports closed LWPOLYLINE and R12 `POLYLINE + VERTEX + SEQEND` input
 - Uses a bottom-left gap-reuse polygon-aware compact rough marker strategy with beam search
-- Evaluates left/bottom, right-aligned, bottom-aligned, and clearance-contact placement candidates
+- Evaluates left/bottom, right-aligned, bottom-aligned, and 1x/2x clearance-contact placement candidates
+- Rechecks remaining space with a local compaction pass that removes and reinserts each piece
+- Prunes polygon collision checks with edge bounding boxes before exact segment tests
+- Always compares against a conservative bbox baseline and discards detailed-search results that are worse
 - SVG previews render the placed closed-polyline outlines instead of bbox rectangles
 - Falls back to conservative bbox placement with a `BBOX_FALLBACK_USED` warning when compact polygon candidates fail full-outline validation
 - DXF layer convention detection is limited

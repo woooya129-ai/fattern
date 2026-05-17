@@ -61,7 +61,10 @@ Layout
   - fabric width overflow moves to next row
   - compact layout reuses gaps above shorter pieces
   - compact layout tries larger-piece ordering to reduce marker length
-  - layout candidate search evaluates edge-aligned and clearance-contact positions
+  - layout candidate search evaluates edge-aligned and 1x/2x clearance-contact positions
+  - detailed search is compared against bbox baseline and cannot return a worse marker length
+  - local compaction pass reinserts pieces into lower valid positions
+  - polygon collision checks use edge bounding-box pruning before exact segment tests
   - polygon-aware layout nests pieces into concave gaps when outlines do not overlap
   - rotation not allowed is respected
   - clearance 0.2cm is applied

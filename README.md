@@ -82,7 +82,10 @@ python -m unittest discover -s tests
 
 - closed LWPOLYLINE과 R12 `POLYLINE + VERTEX + SEQEND` 지원
 - bottom-left gap reuse + beam search 기반 polygon-aware compact rough marker
-- 후보 배치는 좌/하단, 우측 정렬, 하단 정렬, clearance 접촉점을 함께 평가
+- 후보 배치는 좌/하단, 우측 정렬, 하단 정렬, 1배/2배 clearance 접촉점을 함께 평가
+- 초벌 배치 후 피스를 하나씩 다시 넣어보는 local compaction pass로 남는 공간을 재검토
+- polygon 충돌검사는 edge bounding-box pruning으로 필요한 선분쌍만 정밀 검사
+- bbox baseline을 항상 함께 평가해서 detailed 탐색 결과가 기존 보수 배치보다 나쁘면 버림
 - SVG 미리보기는 bbox 사각형이 아니라 원본 closed polyline 외곽선을 배치된 위치에 렌더링
 - polygon compact 후보가 원본 outline 최종검증을 통과하지 못하면 `BBOX_FALLBACK_USED` warning과 함께 보수적 bbox 배치를 사용
 - DXF layer convention 자동 판정은 제한적
