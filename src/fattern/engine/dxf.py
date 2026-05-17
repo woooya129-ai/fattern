@@ -9,6 +9,8 @@ from fattern.geometry import Point, normalize_ring, points_equal
 
 from .models import (
     DxfParseResult,
+    DxfLineEntity,
+    DxfTextEntity,
     EngineMessage,
     EntitySummary,
     ExcludedCandidate,
@@ -73,13 +75,15 @@ def parse_dxf_text(text: str) -> DxfParseResult:
             )
 
         entities = _collect_entities(pairs)
-        summary, candidates, excluded, messages = _summarize_entities(entities)
+        summary, candidates, excluded, line_entities, text_entities, messages = _summarize_entities(entities)
         return DxfParseResult(
             acad_version=acad_version,
             summary=summary,
             piece_candidates=tuple(candidates),
             excluded_candidates=tuple(excluded),
             messages=tuple(messages),
+            line_entities=tuple(line_entities),
+            text_entities=tuple(text_entities),
         )
     except DxfParseError as exc:
         return _blocked_parse_result(str(exc))
@@ -322,9 +326,9 @@ def _translate_entity(entity: _DxfEntity, dx: float, dy: float) -> _DxfEntity:
 def _translate_pairs(pairs: tuple[tuple[int, str], ...], dx: float, dy: float) -> tuple[tuple[int, str], ...]:
     translated: list[tuple[int, str]] = []
     for code, value in pairs:
-        if code == 10:
+        if code in {10, 11}:
             translated.append((code, _format_dxf_float(_parse_float(value, 0, code) + dx)))
-        elif code == 20:
+        elif code in {20, 21}:
             translated.append((code, _format_dxf_float(_parse_float(value, 0, code) + dy)))
         else:
             translated.append((code, value))
@@ -337,10 +341,19 @@ def _format_dxf_float(value: float) -> str:
 
 def _summarize_entities(
     entities: tuple[_DxfEntity, ...],
-) -> tuple[EntitySummary, list[PolylineCandidate], list[ExcludedCandidate], list[EngineMessage]]:
+) -> tuple[
+    EntitySummary,
+    list[PolylineCandidate],
+    list[ExcludedCandidate],
+    list[DxfLineEntity],
+    list[DxfTextEntity],
+    list[EngineMessage],
+]:
     counts_by_type: dict[str, int] = {}
     candidates: list[PolylineCandidate] = []
     excluded: list[ExcludedCandidate] = []
+    line_entities: list[DxfLineEntity] = []
+    text_entities: list[DxfTextEntity] = []
     messages: list[EngineMessage] = []
     closed_count = 0
     open_count = 0
@@ -354,6 +367,32 @@ def _summarize_entities(
             parsed = _parse_lwpolyline(entity, source_index, len(candidates) + 1)
         elif entity.entity_type == "POLYLINE":
             parsed = _parse_polyline(entity, source_index, len(candidates) + 1)
+        elif entity.entity_type == "LINE":
+            parsed_line = _parse_line_entity(entity, source_index)
+            if parsed_line is not None:
+                line_entities.append(parsed_line)
+            continue
+        elif entity.entity_type in {"TEXT", "MTEXT"}:
+            parsed_text = _parse_text_entity(entity, source_index)
+            if parsed_text is not None:
+                text_entities.append(parsed_text)
+                excluded.append(
+                    ExcludedCandidate(
+                        entity_type=entity.entity_type,
+                        layer=parsed_text.layer,
+                        reason_code="ANNOTATION_TEXT_IGNORED",
+                        message=f"{entity.entity_type} annotation was treated as untrusted text and excluded from geometry.",
+                        source_entity_index=source_index,
+                    )
+                )
+                messages.append(
+                    EngineMessage(
+                        code="ANNOTATION_TEXT_UNTRUSTED",
+                        message=f"{entity.entity_type} annotation on layer {parsed_text.layer} was excluded from geometry.",
+                        severity="warning",
+                    )
+                )
+            continue
         else:
             excluded.append(
                 ExcludedCandidate(
@@ -380,7 +419,7 @@ def _summarize_entities(
                 open_polyline_count += 1
             excluded.append(parsed.excluded)
 
-    supported_types = {"LWPOLYLINE", "POLYLINE"}
+    supported_types = {"LWPOLYLINE", "POLYLINE", "LINE", "TEXT", "MTEXT"}
     unsupported_types = tuple(sorted(entity_type for entity_type in counts_by_type if entity_type not in supported_types))
     summary = EntitySummary(
         total_entities=len(entities),
@@ -393,7 +432,7 @@ def _summarize_entities(
         open_polyline_count=open_polyline_count,
         unsupported_entity_types=unsupported_types,
     )
-    return summary, candidates, excluded, messages
+    return summary, candidates, excluded, line_entities, text_entities, messages
 
 
 @dataclass(frozen=True)
@@ -456,6 +495,7 @@ def _parse_lwpolyline(entity: _DxfEntity, source_index: int, piece_number: int) 
             )
         )
 
+    piece_name, size = _piece_metadata_from_layer(layer)
     return _ParsedPolyline(
         candidate=PolylineCandidate(
             piece_id=f"piece_{piece_number:04d}",
@@ -464,6 +504,8 @@ def _parse_lwpolyline(entity: _DxfEntity, source_index: int, piece_number: int) 
             closed=True,
             source_entity_index=source_index,
             vertex_count=declared_vertex_count,
+            piece_name=piece_name,
+            size=size,
         ),
         excluded=None,
         messages=tuple(messages),
@@ -511,6 +553,7 @@ def _parse_polyline(entity: _DxfEntity, source_index: int, piece_number: int) ->
             messages=(EngineMessage(code="NON_CLOSED_CONTOUR", message=message, severity="warning"),),
         )
 
+    piece_name, size = _piece_metadata_from_layer(layer)
     return _ParsedPolyline(
         candidate=PolylineCandidate(
             piece_id=f"piece_{piece_number:04d}",
@@ -519,10 +562,69 @@ def _parse_polyline(entity: _DxfEntity, source_index: int, piece_number: int) ->
             closed=True,
             source_entity_index=source_index,
             vertex_count=len(points),
+            piece_name=piece_name,
+            size=size,
         ),
         excluded=None,
         messages=(),
     )
+
+
+def _piece_metadata_from_layer(layer: str) -> tuple[str | None, str | None]:
+    values: dict[str, str] = {}
+    for token in layer.replace("|", ";").split(";"):
+        if "=" not in token:
+            continue
+        key, value = token.split("=", 1)
+        normalized_key = key.strip().lower().replace("-", "_")
+        clean_value = value.strip()
+        if clean_value:
+            values[normalized_key] = clean_value
+    piece_name = values.get("piece") or values.get("piece_name") or values.get("name")
+    size = values.get("size")
+    return piece_name, size
+
+
+def _parse_line_entity(entity: _DxfEntity, source_index: int) -> DxfLineEntity | None:
+    layer = _layer_from_pairs(entity.pairs) or "0"
+    x1: float | None = None
+    y1: float | None = None
+    x2: float | None = None
+    y2: float | None = None
+    for code, value in entity.pairs:
+        if code == 8:
+            layer = value
+        elif code == 10:
+            x1 = _parse_float(value, source_index, code)
+        elif code == 20:
+            y1 = _parse_float(value, source_index, code)
+        elif code == 11:
+            x2 = _parse_float(value, source_index, code)
+        elif code == 21:
+            y2 = _parse_float(value, source_index, code)
+    if x1 is None or y1 is None or x2 is None or y2 is None:
+        return None
+    return DxfLineEntity(layer=layer, start=(x1, y1), end=(x2, y2), source_entity_index=source_index)
+
+
+def _parse_text_entity(entity: _DxfEntity, source_index: int) -> DxfTextEntity | None:
+    layer = _layer_from_pairs(entity.pairs) or "0"
+    x = 0.0
+    y = 0.0
+    parts: list[str] = []
+    for code, value in entity.pairs:
+        if code == 8:
+            layer = value
+        elif code == 1 or code == 3:
+            parts.append(value)
+        elif code == 10:
+            x = _parse_float(value, source_index, code)
+        elif code == 20:
+            y = _parse_float(value, source_index, code)
+    text = " ".join(part.strip() for part in parts if part.strip())
+    if not text:
+        return None
+    return DxfTextEntity(layer=layer, text=text, insert=(x, y), source_entity_index=source_index)
 
 
 def _layer_from_pairs(pairs: tuple[tuple[int, str], ...]) -> str | None:

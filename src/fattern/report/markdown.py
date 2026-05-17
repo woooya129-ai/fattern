@@ -23,6 +23,7 @@ def render_marker_report(
     result: LayoutResult,
     warnings: Sequence[EngineMessage] | None = None,
     excluded_pieces: Sequence[ExcludedReportItem] = (),
+    csv_partial_fields: Sequence[str] | None = None,
 ) -> str:
     """Render a Markdown report from LayoutResult and optional report lists."""
 
@@ -75,6 +76,22 @@ def render_marker_report(
             )
     else:
         lines.append("- none")
+
+    partial_fields = tuple(csv_partial_fields) if csv_partial_fields is not None else (
+        "piece_name",
+        "size",
+        "quantity",
+        "grainline_status",
+    )
+    partial_text = ", ".join(partial_fields) if partial_fields else "none"
+    lines.extend(
+        [
+            "",
+            "## CSV Availability",
+            "",
+            f"- unavailable piece metadata fields stay empty in `report.csv`: {partial_text}",
+        ]
+    )
 
     lines.extend(["", "## Excluded Pieces", ""])
     if excluded_pieces:

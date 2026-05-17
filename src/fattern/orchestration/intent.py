@@ -233,6 +233,42 @@ def _question_for_field(field: str) -> dict[str, Any]:
             "question": "피스별 수량을 알려줘.",
             "allowed_answers": ["quantity_by_piece"],
         },
+        "size_ratio": {
+            "question": "사이즈별 수량 비율을 알려줘.",
+            "allowed_answers": ["{}", "{\"M\": 1}", "{\"S\": 1, \"M\": 2, \"L\": 1}"],
+        },
+        "spacing": {
+            "question": "피스 사이 최소 간격을 선택 단위 기준 숫자로 알려줘.",
+            "allowed_answers": ["0", "0.2", "5"],
+        },
+        "allowed_rotation": {
+            "question": "허용 회전 각도를 배열로 알려줘.",
+            "allowed_answers": ["[0]", "[0, 180]", "[0, 90, 180, 270]"],
+        },
+        "grainline_required": {
+            "question": "식서선이 필수 조건인지 알려줘.",
+            "allowed_answers": ["true", "false"],
+        },
+        "nap_direction": {
+            "question": "원단 방향성을 알려줘.",
+            "allowed_answers": ["one_way", "two_way", "none", "no_nap", "not_one_way"],
+        },
+        "shrinkage_percent": {
+            "question": "수축률을 길이 방향 퍼센트 숫자로 알려줘.",
+            "allowed_answers": ["0", "3", "5"],
+        },
+        "fabric_type": {
+            "question": "원단 종류를 알려줘.",
+            "allowed_answers": ["woven", "knit", "unknown"],
+        },
+        "stretch_direction": {
+            "question": "니트라면 스트레치 방향을 알려줘.",
+            "allowed_answers": ["lengthwise", "crosswise", "bias", "unknown"],
+        },
+        "seam_allowance": {
+            "question": "시접 포함 여부와 fallback 폭을 객체로 알려줘.",
+            "allowed_answers": ["{\"status\": \"included\"}", "{\"status\": \"excluded\", \"fallback_width\": 1}"],
+        },
         "grainline_rule": {
             "question": "식서 방향 규칙을 알려줘.",
             "allowed_answers": ["required", "optional", "unknown"],

@@ -14,7 +14,9 @@ from fattern.mcp import McpToolRegistry
 from fattern.orchestration.chain import (
     ChainResultValidationError,
     ReportValidationError,
+    adapt_marker_yield_request,
     execute_marker_estimation,
+    execute_marker_yield_request,
     validate_final_report,
     validate_stopped_at,
 )
@@ -24,7 +26,13 @@ from fattern.orchestration.intent import normalize_user_intent
 FIXTURE_DIR = ROOT / "tests" / "fixtures"
 
 
-def intent(*, fabric_width: float = 10.0, one_way_fabric: bool = False, grainline_status: str = "unknown") -> dict:
+def intent(
+    *,
+    fabric_width: float = 10.0,
+    one_way_fabric: bool = False,
+    grainline_status: str = "unknown",
+    grainline_required: bool = False,
+) -> dict:
     return normalize_user_intent(
         {
             "dxf_file": "sample.dxf",
@@ -34,6 +42,7 @@ def intent(*, fabric_width: float = 10.0, one_way_fabric: bool = False, grainlin
                 "seam_allowance_included": True,
                 "one_way_fabric": one_way_fabric,
                 "grainline_status": grainline_status,
+                "grainline_required": grainline_required,
                 "rotation_allowed_degrees": [0, 180],
                 "clearance": 0.2,
             },
@@ -294,6 +303,7 @@ class OrchestrationChainTests(unittest.TestCase):
     def test_stopped_at_values_are_enum_validated(self) -> None:
         allowed = [
             "completed",
+            "adapt_marker_yield_request",
             "normalize_user_intent",
             "create_job",
             "register_input_file",
@@ -318,6 +328,177 @@ class OrchestrationChainTests(unittest.TestCase):
             dxf_content=path.read_bytes(),
             registry=self.registry,
         )
+
+
+class HighLevelMarkerYieldAdapterTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.temp_dir = tempfile.mkdtemp(prefix="fattern-orch-high-level-test-")
+        self.store = JobStore(Path(self.temp_dir) / "jobs")
+        self.registry = McpToolRegistry(self.store)
+
+    def tearDown(self) -> None:
+        shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def test_adapter_maps_cuttable_width_spacing_and_one_way_policy(self) -> None:
+        result = adapt_marker_yield_request(
+            {
+                "pattern_file_id": "file_uploaded",
+                "fabric_width": 1470,
+                "cuttable_width": 1450,
+                "unit": "mm",
+                "spacing": 5,
+                "allowed_rotation": [0],
+                "nap_direction": "one_way",
+                "seam_allowance": {"status": "included"},
+            }
+        )
+
+        self.assertEqual(result["status"], "ready")
+        user_intent = result["user_intent"]
+        self.assertEqual(user_intent["fabric"], {"width": 1450, "width_unit": "mm"})
+        self.assertEqual(user_intent["rules"]["clearance"], 5)
+        self.assertIs(user_intent["rules"]["one_way_fabric"], True)
+        self.assertEqual(user_intent["rules"]["rotation_allowed_degrees"], [0])
+        self.assertEqual(
+            [warning["code"] for warning in result["warnings"]],
+            ["CUTTABLE_WIDTH_USED", "NAP_DIRECTION_ONE_WAY_MAPPED", "SPACING_MAPPED_TO_CLEARANCE"],
+        )
+
+    def test_high_level_pattern_file_id_only_blocks_before_tool_chain(self) -> None:
+        result = execute_marker_yield_request(
+            {
+                "pattern_file_id": "file_uploaded",
+                "fabric_width": 10,
+                "unit": "cm",
+                "allowed_rotation": [0],
+                "nap_direction": "none",
+                "grainline_required": False,
+                "seam_allowance": {"status": "included"},
+            },
+            registry=self.registry,
+        )
+
+        self.assertEqual(result["status"], "blocked")
+        self.assertEqual(result["stopped_at"], "adapt_marker_yield_request")
+        self.assertEqual(result["tool_calls"], [])
+        self.assertEqual(result["errors"][0]["code"], "PATTERN_FILE_MAPPING_UNRESOLVED")
+        self.assertNotIn("job_id", result)
+
+    def test_high_level_size_ratio_is_blocked_until_chain_contract_exists(self) -> None:
+        result = execute_marker_yield_request(
+            {
+                "pattern_file_id": "file_uploaded",
+                "fabric_width": 10,
+                "unit": "cm",
+                "size_ratio": {"S": 1, "M": 2},
+                "allowed_rotation": [0],
+                "nap_direction": "none",
+                "grainline_required": False,
+                "seam_allowance": {"status": "included"},
+            },
+            dxf_file_name="rectangle_lwpolyline.dxf",
+            dxf_content=(FIXTURE_DIR / "rectangle_lwpolyline.dxf").read_bytes(),
+            registry=self.registry,
+        )
+
+        self.assertEqual(result["status"], "blocked")
+        self.assertEqual(result["stopped_at"], "adapt_marker_yield_request")
+        self.assertEqual(result["tool_calls"], [])
+        self.assertEqual(result["errors"][0]["code"], "SIZE_RATIO_UNSUPPORTED_BY_CHAIN")
+
+    def test_high_level_adapter_blocks_fields_it_cannot_apply(self) -> None:
+        blocked_fields = {
+            "piece_quantity": {"piece_0001": 2},
+            "shrinkage": {"length_percent": 3, "width_percent": 0},
+            "stretch_direction": "lengthwise",
+        }
+
+        for field, value in blocked_fields.items():
+            with self.subTest(field=field):
+                result = execute_marker_yield_request(
+                    {
+                        "pattern_file_id": "file_uploaded",
+                        "fabric_width": 10,
+                        "unit": "cm",
+                        "allowed_rotation": [0],
+                        "nap_direction": "none",
+                        "grainline_required": False,
+                        "seam_allowance": {"status": "included"},
+                        field: value,
+                    },
+                    dxf_file_name="rectangle_lwpolyline.dxf",
+                    dxf_content=(FIXTURE_DIR / "rectangle_lwpolyline.dxf").read_bytes(),
+                    registry=self.registry,
+                )
+
+                self.assertEqual(result["status"], "blocked")
+                self.assertEqual(result["stopped_at"], "adapt_marker_yield_request")
+                self.assertEqual(result["tool_calls"], [])
+                self.assertEqual(result["errors"][0]["code"], f"{field.upper()}_UNSUPPORTED_BY_CHAIN")
+
+    def test_high_level_grainline_required_non_one_way_reaches_layout_policy(self) -> None:
+        result = execute_marker_yield_request(
+            {
+                "pattern_file_id": "file_uploaded",
+                "fabric_width": 10,
+                "unit": "cm",
+                "allowed_rotation": [0],
+                "nap_direction": "none",
+                "grainline_required": True,
+                "seam_allowance": {"status": "included"},
+            },
+            dxf_file_name="rectangle_lwpolyline.dxf",
+            dxf_content=(FIXTURE_DIR / "rectangle_lwpolyline.dxf").read_bytes(),
+            registry=self.registry,
+        )
+
+        self.assertEqual(result["status"], "blocked")
+        self.assertEqual(result["stopped_at"], "estimate_marker_layout")
+        self.assertEqual(result["errors"][0]["code"], "MISSING_GRAINLINE_REQUIRED")
+        self.assertEqual(
+            result["tool_calls"],
+            [
+                "create_job",
+                "register_input_file",
+                "parse_dxf",
+                "extract_pattern_pieces",
+                "calculate_piece_metrics",
+                "estimate_marker_layout",
+            ],
+        )
+
+    def test_high_level_request_runs_existing_chain_when_mapping_is_safe(self) -> None:
+        result = execute_marker_yield_request(
+            {
+                "pattern_file_id": "file_uploaded",
+                "fabric_width": 10,
+                "unit": "cm",
+                "spacing": 0.2,
+                "allowed_rotation": [0],
+                "nap_direction": "none",
+                "grainline_required": False,
+                "seam_allowance": {"status": "included"},
+            },
+            dxf_file_name="rectangle_lwpolyline.dxf",
+            dxf_content=(FIXTURE_DIR / "rectangle_lwpolyline.dxf").read_bytes(),
+            registry=self.registry,
+        )
+
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(
+            result["tool_calls"],
+            [
+                "create_job",
+                "register_input_file",
+                "parse_dxf",
+                "extract_pattern_pieces",
+                "calculate_piece_metrics",
+                "estimate_marker_layout",
+            ],
+        )
+        self.assertEqual(result["layout"]["fabric_width"], 10)
+        self.assertEqual(result["layout"]["clearance"], 0.2)
+        self.assertEqual(result["warnings"][0]["code"], "SPACING_MAPPED_TO_CLEARANCE")
 
 
 if __name__ == "__main__":

@@ -38,17 +38,18 @@ class FatternMcpServer:
     def prompts_get(self, name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
         if name == "fattern-help":
             text = (
-                "Fattern workflow: ask get_estimation_questionnaire, collect answers, register DXF content, "
-                "then call create_job -> register_input_file -> parse_dxf -> extract_pattern_pieces -> "
-                "calculate_piece_metrics -> estimate_marker_layout -> render_marker_svg -> export_artifacts. "
-                "Do not pass filesystem paths to MCP tools. Stop immediately when any tool returns a blocker error."
+                "Fattern workflow: either call calculate_marker_yield with a registered pattern_file_id, or ask "
+                "get_estimation_questionnaire, collect answers, register DXF content, then call create_job -> "
+                "register_input_file -> parse_dxf -> extract_pattern_pieces -> calculate_piece_metrics -> "
+                "estimate_marker_layout -> render_marker_svg -> export_artifacts. Do not pass filesystem paths to "
+                "MCP tools. Stop immediately when any tool returns a blocker error."
             )
             return _prompt_response("Fattern Help", text)
         if name == "fattern-estimate":
             text = (
-                "Ask for: DXF file, fabric_width, unit, dxf_unit_hint, seam_allowance_included, "
-                "seam_allowance_width, grainline_status, one_way_fabric, rotation_allowed_degrees, clearance. "
-                "Default rotation is 0 only. Do not rotate grainline-sensitive patterns unless the user explicitly allows it."
+                "Ask for: registered pattern_file_id, fabric_width or cuttable_width, unit, seam_allowance status, "
+                "nap_direction, grainline_required, allowed_rotation, spacing. Default rotation is 0 only. "
+                "Do not rotate grainline-sensitive patterns unless the user explicitly allows it."
             )
             return _prompt_response("Estimate Rough Marker", text)
         raise KeyError(name)

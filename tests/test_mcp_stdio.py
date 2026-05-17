@@ -58,6 +58,7 @@ class McpStdioTransportTests(unittest.TestCase):
         tool_names = {tool["name"] for tool in responses[1]["result"]["tools"]}
         self.assertIn("register_input_file", tool_names)
         self.assertIn("parse_dxf", tool_names)
+        self.assertIn("calculate_marker_yield", tool_names)
         self.assertFalse(responses[2]["result"]["isError"])
         self.assertTrue(responses[2]["result"]["structuredContent"]["job_id"].startswith("job_"))
 

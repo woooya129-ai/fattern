@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from fattern.engine import EngineMessage, LayoutPlacement, LayoutResult
-from fattern.jobs import JobError, JobStore
+from fattern.jobs import FileRecord, JobError, JobStore
 
 
 def layout_result(piece_id: str = "piece_0001") -> LayoutResult:
@@ -62,6 +62,16 @@ class JobStoreLayoutTests(unittest.TestCase):
         self.assertEqual(second_id, "layout_next")
         self.assertEqual(self.store.get_layout(self.job.job_id, first_id).placements[0].piece_id, "piece_0001")
         self.assertEqual(self.store.get_layout(self.job.job_id, second_id).placements[0].piece_id, "piece_0002")
+
+    def test_resolve_input_file_maps_file_id_back_to_job_workspace(self) -> None:
+        file_id = self.store.register_input_file(self.job.job_id, "sample.dxf", b"0\nEOF\n")
+
+        job_record, file_record = self.store.resolve_input_file(file_id)
+
+        self.assertEqual(job_record.job_id, self.job.job_id)
+        self.assertIsInstance(file_record, FileRecord)
+        self.assertEqual(file_record.file_id, file_id)
+        self.assertEqual(file_record.original_name, "sample.dxf")
 
 
 if __name__ == "__main__":

@@ -10,7 +10,7 @@ from typing import Iterable
 from fattern.schemas import ID_PATTERN
 
 ALLOWED_INPUT_SUFFIXES = frozenset({".dxf", ".json"})
-ALLOWED_ARTIFACT_SUFFIXES = frozenset({".json", ".md", ".svg", ".zip"})
+ALLOWED_ARTIFACT_SUFFIXES = frozenset({".json", ".md", ".svg", ".csv", ".pdf", ".zip"})
 OPAQUE_ID_RE = re.compile(ID_PATTERN)
 
 

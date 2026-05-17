@@ -24,6 +24,9 @@ from .models import (
 )
 
 VALID_ROTATIONS = (0, 90, 180, 270)
+NON_ONE_WAY_NAP_DIRECTIONS = {"two_way", "none", "no_nap", "not_one_way"}
+VALID_GRAINLINE_STATUSES = {"present", "missing", "unknown"}
+VALID_FABRIC_TYPES = {"woven", "knit", "unknown"}
 COMPACT_LAYOUT_BEAM_WIDTH = 4
 MAX_CANDIDATE_PLACEMENTS_PER_STATE = 6
 MAX_COLLISION_OUTLINE_POINTS = 96
@@ -41,25 +44,74 @@ def estimate_compact_bbox_layout(
     clearance: float = DEFAULT_CLEARANCE_CM,
     unit: str = DEFAULT_UNIT,
     fabric_width_unit: str | None = None,
+    cuttable_width: float | None = None,
+    spacing: float | None = None,
+    nap_direction: str | None = None,
+    one_way_fabric: bool | None = None,
+    grainline_status: str = "unknown",
+    grainline_required: bool | None = None,
+    fabric_type: str | None = None,
 ) -> LayoutResult:
     metrics, upstream_messages = _metrics_from_input(metrics_result)
-    rotations = _normalize_rotations(rotation_allowed_degrees)
+    input_rotations = _normalize_rotations(rotation_allowed_degrees)
     layout_unit = fabric_width_unit or unit
+    resolved_fabric_width, width_messages = _resolve_fabric_width(fabric_width, cuttable_width)
+    resolved_clearance, spacing_messages = _resolve_clearance(clearance, spacing)
+    resolved_nap_direction, nap_messages = _resolve_nap_direction(nap_direction)
+    rotations, rotation_policy_messages = _apply_nap_rotation_policy(
+        input_rotations,
+        resolved_nap_direction,
+        one_way_fabric,
+    )
+    resolved_grainline_status, grainline_messages = _resolve_grainline_status(grainline_status)
+    resolved_grainline_required, grainline_required_messages = _resolve_grainline_required(grainline_required)
+    resolved_fabric_type, fabric_type_messages = _resolve_fabric_type(fabric_type)
+    policy_messages = (
+        *width_messages,
+        *spacing_messages,
+        *nap_messages,
+        *rotation_policy_messages,
+        *grainline_messages,
+        *grainline_required_messages,
+        *fabric_type_messages,
+    )
 
     if any(message.severity == "blocker" for message in upstream_messages):
-        return _blocked_layout_result(fabric_width, clearance, layout_unit, rotations, upstream_messages)
+        return _blocked_layout_result(fabric_width, clearance, layout_unit, input_rotations, upstream_messages)
 
-    input_messages = _validate_layout_input(metrics, fabric_width, rotations, clearance, layout_unit)
+    grainline_policy_messages = _grainline_policy_messages(
+        resolved_grainline_required,
+        resolved_fabric_type,
+        one_way_fabric,
+        resolved_grainline_status,
+    )
+    combined_policy_messages = (*policy_messages, *grainline_policy_messages)
+    if any(message.severity == "blocker" for message in combined_policy_messages):
+        return _blocked_layout_result(
+            resolved_fabric_width,
+            resolved_clearance,
+            layout_unit,
+            rotations,
+            combined_policy_messages,
+        )
+
+    input_messages = _validate_layout_input(metrics, resolved_fabric_width, rotations, resolved_clearance, layout_unit)
     if input_messages:
-        return _blocked_layout_result(fabric_width, clearance, layout_unit, rotations, input_messages)
+        return _blocked_layout_result(
+            resolved_fabric_width,
+            resolved_clearance,
+            layout_unit,
+            rotations,
+            (*combined_policy_messages, *input_messages),
+        )
 
-    layout = _best_compact_layout(metrics, rotations, fabric_width, clearance)
+    layout = _best_compact_layout(metrics, rotations, resolved_fabric_width, resolved_clearance)
     if layout is None:
-        blocked_piece = _first_piece_exceeding_width(metrics, rotations, fabric_width)
+        blocked_piece = _first_piece_exceeding_width(metrics, rotations, resolved_fabric_width)
         piece_id = blocked_piece.piece_id if blocked_piece is not None else "piece"
         return _blocked_layout_result(
-            fabric_width,
-            clearance,
+            resolved_fabric_width,
+            resolved_clearance,
             layout_unit,
             rotations,
             (
@@ -74,24 +126,26 @@ def estimate_compact_bbox_layout(
 
     marker_length = _marker_length(placements)
     total_piece_area = sum(metric.area for metric in metrics)
-    marker_area = fabric_width * marker_length
+    marker_area = resolved_fabric_width * marker_length
     efficiency = total_piece_area / marker_area if marker_area > EPSILON else 0.0
-    validity, validation_messages = validate_marker_layout(placements, fabric_width, clearance)
+    validity, validation_messages = validate_marker_layout(placements, resolved_fabric_width, resolved_clearance)
     layout_messages = _layout_messages(used_bbox_fallback)
 
     return LayoutResult(
         placements=tuple(placements),
-        fabric_width=fabric_width,
+        fabric_width=resolved_fabric_width,
         marker_length=marker_length,
         efficiency=efficiency,
-        clearance=clearance,
+        clearance=resolved_clearance,
         unit=layout_unit,
         no_overlap=validity.no_overlap,
-        messages=(*layout_messages, *validation_messages),
+        messages=(*combined_policy_messages, *layout_messages, *validation_messages),
         within_fabric_width=validity.within_fabric_width,
         overlaps=validity.overlaps,
         total_piece_area=total_piece_area,
         rotation_allowed_degrees=rotations,
+        grainline_status=resolved_grainline_status,
+        one_way_fabric=one_way_fabric,
     )
 
 
@@ -101,6 +155,13 @@ def estimate_marker_layout(
     fabric_width_unit: str = DEFAULT_UNIT,
     rotation_allowed_degrees: Sequence[int] = DEFAULT_ROTATION_ALLOWED_DEGREES,
     clearance: float = DEFAULT_CLEARANCE_CM,
+    cuttable_width: float | None = None,
+    spacing: float | None = None,
+    nap_direction: str | None = None,
+    one_way_fabric: bool | None = None,
+    grainline_status: str = "unknown",
+    grainline_required: bool | None = None,
+    fabric_type: str | None = None,
 ) -> LayoutResult:
     return estimate_compact_bbox_layout(
         metrics_result=metrics_result,
@@ -108,6 +169,13 @@ def estimate_marker_layout(
         fabric_width_unit=fabric_width_unit,
         rotation_allowed_degrees=rotation_allowed_degrees,
         clearance=clearance,
+        cuttable_width=cuttable_width,
+        spacing=spacing,
+        nap_direction=nap_direction,
+        one_way_fabric=one_way_fabric,
+        grainline_status=grainline_status,
+        grainline_required=grainline_required,
+        fabric_type=fabric_type,
     )
 
 
@@ -118,6 +186,13 @@ def estimate_bbox_shelf_layout(
     clearance: float = DEFAULT_CLEARANCE_CM,
     unit: str = DEFAULT_UNIT,
     fabric_width_unit: str | None = None,
+    cuttable_width: float | None = None,
+    spacing: float | None = None,
+    nap_direction: str | None = None,
+    one_way_fabric: bool | None = None,
+    grainline_status: str = "unknown",
+    grainline_required: bool | None = None,
+    fabric_type: str | None = None,
 ) -> LayoutResult:
     """Backward-compatible alias for the compact bbox layout engine."""
 
@@ -128,6 +203,13 @@ def estimate_bbox_shelf_layout(
         clearance=clearance,
         unit=unit,
         fabric_width_unit=fabric_width_unit,
+        cuttable_width=cuttable_width,
+        spacing=spacing,
+        nap_direction=nap_direction,
+        one_way_fabric=one_way_fabric,
+        grainline_status=grainline_status,
+        grainline_required=grainline_required,
+        fabric_type=fabric_type,
     )
 
 
@@ -202,6 +284,236 @@ def _normalize_rotations(rotation_allowed_degrees: Sequence[int]) -> tuple[int, 
         if rotation not in normalized:
             normalized.append(rotation)
     return tuple(normalized)
+
+
+def _resolve_fabric_width(fabric_width: float, cuttable_width: float | None) -> tuple[float, tuple[EngineMessage, ...]]:
+    if cuttable_width is None:
+        return fabric_width, ()
+    if cuttable_width <= EPSILON:
+        return (
+            fabric_width,
+            (
+                EngineMessage(
+                    code="INVALID_CUTTABLE_WIDTH",
+                    message="cuttable_width must be greater than zero.",
+                    severity="blocker",
+                ),
+            ),
+        )
+
+    messages: list[EngineMessage] = []
+    if cuttable_width > fabric_width + EPSILON:
+        return (
+            fabric_width,
+            (
+                EngineMessage(
+                    code="INVALID_CUTTABLE_WIDTH",
+                    message="cuttable_width must not be greater than fabric_width.",
+                    severity="blocker",
+                ),
+            ),
+        )
+    if abs(cuttable_width - fabric_width) > EPSILON:
+        messages.append(
+            EngineMessage(
+                code="CUTTABLE_WIDTH_APPLIED",
+                message="cuttable_width was prioritized over fabric_width for layout width.",
+                severity="warning",
+            )
+        )
+
+    return cuttable_width, tuple(messages)
+
+
+def _resolve_clearance(clearance: float, spacing: float | None) -> tuple[float, tuple[EngineMessage, ...]]:
+    if spacing is None:
+        return clearance, ()
+    if spacing < 0:
+        return (
+            clearance,
+            (
+                EngineMessage(
+                    code="INVALID_SPACING",
+                    message="spacing must be zero or greater.",
+                    severity="blocker",
+                ),
+            ),
+        )
+    if abs(clearance - spacing) <= EPSILON:
+        return spacing, ()
+    return (
+        spacing,
+        (
+            EngineMessage(
+                code="SPACING_OVERRIDES_CLEARANCE",
+                message="spacing was applied as the minimum piece gap and overrides clearance.",
+                severity="warning",
+            ),
+        ),
+    )
+
+
+def _resolve_nap_direction(nap_direction: str | None) -> tuple[str | None, tuple[EngineMessage, ...]]:
+    if nap_direction is None:
+        return None, ()
+    if not isinstance(nap_direction, str):
+        return (
+            None,
+            (
+                EngineMessage(
+                    code="UNSUPPORTED_NAP_DIRECTION",
+                    message="nap_direction is not supported by the engine policy.",
+                    severity="blocker",
+                ),
+            ),
+        )
+    normalized = nap_direction.strip().lower()
+    if normalized == "one_way":
+        return normalized, ()
+    if normalized in NON_ONE_WAY_NAP_DIRECTIONS:
+        return normalized, ()
+    return (
+        None,
+        (
+            EngineMessage(
+                code="UNSUPPORTED_NAP_DIRECTION",
+                message="nap_direction is not supported by the engine policy.",
+                severity="blocker",
+            ),
+        ),
+    )
+
+
+def _apply_nap_rotation_policy(
+    rotations: tuple[int, ...],
+    nap_direction: str | None,
+    one_way_fabric: bool | None,
+) -> tuple[tuple[int, ...], tuple[EngineMessage, ...]]:
+    if nap_direction != "one_way" and one_way_fabric is not True:
+        return rotations, ()
+    if 180 not in rotations:
+        return rotations, ()
+    filtered = tuple(rotation for rotation in rotations if rotation != 180)
+    return (
+        filtered,
+        (
+            EngineMessage(
+                code="NAP_DIRECTION_ONE_WAY_BLOCKED_180_ROTATION",
+                message="180 degree rotation was removed for one-way nap rotation policy.",
+                severity="warning",
+            ),
+        ),
+    )
+
+
+def _resolve_grainline_status(grainline_status: str | None) -> tuple[str, tuple[EngineMessage, ...]]:
+    if grainline_status is None:
+        return "unknown", ()
+    if not isinstance(grainline_status, str):
+        return (
+            "unknown",
+            (
+                EngineMessage(
+                    code="INVALID_GRAINLINE_STATUS",
+                    message="grainline_status must be one of present, missing, unknown.",
+                    severity="blocker",
+                ),
+            ),
+        )
+    normalized = grainline_status.strip().lower()
+    if normalized in VALID_GRAINLINE_STATUSES:
+        return normalized, ()
+    return (
+        "unknown",
+        (
+            EngineMessage(
+                code="INVALID_GRAINLINE_STATUS",
+                message="grainline_status must be one of present, missing, unknown.",
+                severity="blocker",
+            ),
+        ),
+    )
+
+
+def _resolve_grainline_required(grainline_required: bool | None) -> tuple[bool, tuple[EngineMessage, ...]]:
+    if grainline_required is None:
+        return False, ()
+    if isinstance(grainline_required, bool):
+        return grainline_required, ()
+    return (
+        False,
+        (
+            EngineMessage(
+                code="INVALID_GRAINLINE_REQUIRED",
+                message="grainline_required must be a boolean.",
+                severity="blocker",
+            ),
+        ),
+    )
+
+
+def _resolve_fabric_type(fabric_type: str | None) -> tuple[str, tuple[EngineMessage, ...]]:
+    if fabric_type is None:
+        return "unknown", ()
+    if not isinstance(fabric_type, str):
+        return (
+            "unknown",
+            (
+                EngineMessage(
+                    code="UNSUPPORTED_FABRIC_TYPE",
+                    message="fabric_type must be one of woven, knit, unknown.",
+                    severity="blocker",
+                ),
+            ),
+        )
+    normalized = fabric_type.strip().lower()
+    if normalized in VALID_FABRIC_TYPES:
+        return normalized, ()
+    return (
+        "unknown",
+        (
+            EngineMessage(
+                code="UNSUPPORTED_FABRIC_TYPE",
+                message="fabric_type must be one of woven, knit, unknown.",
+                severity="blocker",
+            ),
+        ),
+    )
+
+
+def _grainline_policy_messages(
+    grainline_required: bool,
+    fabric_type: str,
+    one_way_fabric: bool | None,
+    grainline_status: str,
+) -> tuple[EngineMessage, ...]:
+    if grainline_status != "missing":
+        return ()
+    if grainline_required:
+        return (
+            EngineMessage(
+                code="MISSING_GRAINLINE_REQUIRED",
+                message="Grainline is required before estimating marker layout.",
+                severity="blocker",
+            ),
+        )
+    if fabric_type == "woven":
+        return (
+            EngineMessage(
+                code="MISSING_GRAINLINE_FOR_WOVEN",
+                message="fabric_type=woven requires grainline before estimating marker layout.",
+                severity="blocker",
+            ),
+        )
+    if one_way_fabric is True:
+        return (
+            EngineMessage(
+                code="MISSING_GRAINLINE_ON_ONE_WAY_FABRIC",
+                message="Grainline must be present for one-way fabric before estimating marker layout.",
+                severity="blocker",
+            ),
+        )
+    return ()
 
 
 def _validate_layout_input(

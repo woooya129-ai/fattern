@@ -10,7 +10,9 @@ from .layout import (
 )
 from .metrics import calculate_piece_metrics, calculate_piece_set_metrics
 from .models import (
+    DxfLineEntity,
     DxfParseResult,
+    DxfTextEntity,
     EngineMessage,
     EntitySummary,
     ExcludedCandidate,
@@ -25,6 +27,8 @@ from .models import (
 
 __all__ = [
     "DxfParseResult",
+    "DxfLineEntity",
+    "DxfTextEntity",
     "EngineMessage",
     "EntitySummary",
     "ExcludedCandidate",

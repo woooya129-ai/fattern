@@ -28,6 +28,7 @@ TOOL_INPUT_DEFS = {
     "render_marker_svg": "render_marker_svg_input",
     "get_job_status": "get_job_status_input",
     "export_artifacts": "export_artifacts_input",
+    "calculate_marker_yield": "calculate_marker_yield_input",
 }
 
 

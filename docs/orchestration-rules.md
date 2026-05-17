@@ -33,3 +33,16 @@
 - SVG path를 직접 만들지 않는다.
 - tool output에 없는 피스명을 만들지 않는다.
 - blocker 이후 다음 계산 tool 호출을 허용하지 않는다.
+
+## ORCH-040 High-Level Adapter
+
+- `calculate_marker_yield` 고수준 요청은 schema/MCP 계약이 확정되기 전까지 orchestration helper에서만 기존 `UserIntent`로 변환한다.
+- `cuttable_width`가 있으면 `fabric_width`보다 우선해서 `fabric.width`로 넘긴다.
+- `spacing`은 기존 `rules.clearance`로 넘긴다. 근거는 둘 다 선택 단위 기준 피스 간 최소 간격을 뜻하기 때문이다.
+- `nap_direction=one_way`는 `rules.one_way_fabric=true`로 넘긴다.
+- `nap_direction`이 `none`, `two_way`, `no_nap`, `not_one_way`이면 `rules.one_way_fabric=false`로 넘긴다.
+- `pattern_file_id`만으로는 현재 orchestration layer가 기존 job/file mapping을 복원할 수 없다. 업로드 파일명과 content가 없으면 `PATTERN_FILE_MAPPING_UNRESOLVED` blocker로 중단한다.
+- `size_ratio`, `piece_quantity`, `fabric_type`, `shrinkage_percent`, `shrinkage`는 고수준 `calculate_marker_yield` 경로에서 직접 처리한다. 기존 `UserIntent` adapter가 안전하게 매핑할 수 없는 경우에는 임의로 무시하지 않고 blocker로 중단한다.
+- `grainline_required=true`는 `estimate_marker_layout`에 그대로 넘기고, 추출 결과 grainline이 missing이면 layout policy에서 blocker로 중단한다.
+- `grainline_required`와 `nap_direction`은 직교 조건이다. `nap_direction`은 회전 정책으로만 다룬다.
+- adapter blocker는 `stopped_at=adapt_marker_yield_request`, `tool_calls=[]`를 반환한다.

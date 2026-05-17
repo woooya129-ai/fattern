@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import json
 import re
 from base64 import b64decode
 from binascii import Error as Base64DecodeError
 from copy import deepcopy
 from dataclasses import replace
+from math import hypot
 from typing import Any, Callable
 
 from fattern.engine import (
+    DxfLineEntity,
     EngineMessage,
     LayoutResult,
     MetricsResult,
@@ -18,8 +21,10 @@ from fattern.engine import (
     estimate_marker_layout as run_estimate_marker_layout,
     parse_dxf_file,
 )
+from fattern.geometry import BoundingBox
 from fattern.engine.metrics import calculate_piece_set_metrics
 from fattern.jobs import JobError, JobStore, SecurityError
+from fattern.report import PieceReportMetadata, partial_csv_fields, render_marker_csv, render_marker_pdf, render_marker_report
 from fattern.render import render_marker_svg
 
 from .schemas import TOOL_SCHEMAS, list_tool_definitions
@@ -42,6 +47,7 @@ class McpToolRegistry:
             "render_marker_svg": self._render_marker_svg,
             "get_job_status": self._get_job_status,
             "export_artifacts": self._export_artifacts,
+            "calculate_marker_yield": self._calculate_marker_yield,
         }
 
     def list_tools(self) -> list[dict]:
@@ -144,9 +150,15 @@ class McpToolRegistry:
                 "errors": [_message("NO_PATTERN_PIECES_FOUND", "No closed pattern pieces were found.", "blocker")],
             }
 
+        pieces, semantic_warnings = _attach_grainline_metadata(
+            pieces,
+            parse_result.line_entities,
+            arguments.get("grainline_layer_names") or [],
+        )
+        warnings.extend(semantic_warnings)
         piece_set_id = self.store.store_piece_set(job_id, pieces)
-        if not arguments.get("grainline_layer_names"):
-            warnings.append(_message("GRAINLINE_NOT_DETECTED", "No grainline layer names were provided.", "warning"))
+        if not parse_result.line_entities:
+            warnings.append(_message("GRAINLINE_NOT_DETECTED", "No grainline line entities were detected.", "warning"))
         return {
             "job_id": job_id,
             "piece_set_id": piece_set_id,
@@ -184,7 +196,7 @@ class McpToolRegistry:
 
     def _estimate_marker_layout(self, arguments: dict[str, Any]) -> ToolResponse:
         job_id = arguments["job_id"]
-        if arguments.get("one_way_fabric") is True and arguments.get("grainline_status", "unknown") == "missing":
+        if arguments.get("one_way_fabric") is True and arguments.get("grainline_status", "unknown") != "present":
             return {
                 "job_id": job_id,
                 "warnings": [],
@@ -206,6 +218,13 @@ class McpToolRegistry:
             fabric_width_unit=arguments["fabric_width_unit"],
             rotation_allowed_degrees=arguments["rotation_allowed_degrees"],
             clearance=arguments["clearance"],
+            cuttable_width=arguments.get("cuttable_width"),
+            spacing=arguments.get("spacing"),
+            nap_direction=arguments.get("nap_direction"),
+            one_way_fabric=one_way_fabric,
+            grainline_status=grainline_status,
+            grainline_required=arguments.get("grainline_required"),
+            fabric_type=arguments.get("fabric_type"),
         )
         result = replace(result, grainline_status=grainline_status, one_way_fabric=one_way_fabric)
         result = replace(result, messages=(*result.messages, *_rotation_policy_messages(result)))
@@ -269,6 +288,263 @@ class McpToolRegistry:
             "errors": [],
         }
 
+    def _calculate_marker_yield(self, arguments: dict[str, Any]) -> ToolResponse:
+        validation_error = _validate_marker_yield_request(arguments)
+        if validation_error is not None:
+            return validation_error
+
+        job_record, file_record = self.store.resolve_input_file(arguments["pattern_file_id"])
+        if file_record.path.suffix.lower() != ".dxf":
+            return _error_response("UNSUPPORTED_FILE_TYPE", "Pattern input must be a DXF file.")
+
+        job_id = job_record.job_id
+        warnings = _marker_yield_preflight_warnings(arguments)
+        tool_calls: list[str] = []
+        state: ToolResponse = {
+            "status": "running",
+            "job_id": job_id,
+            "pattern_file_id": arguments["pattern_file_id"],
+            "tool_calls": tool_calls,
+            "warnings": warnings,
+            "errors": [],
+            "store": self.store,
+        }
+
+        effective_width = arguments.get("cuttable_width") or arguments["fabric_width"]
+        seam_allowance = arguments["seam_allowance"]
+        seam_allowance_width = _resolve_seam_allowance_width(seam_allowance, arguments["unit"])
+        if seam_allowance["status"] == "excluded" and seam_allowance.get("fallback_width") is None:
+            _extend_unique_messages(
+                warnings,
+                [
+                    _message(
+                        "SEAM_ALLOWANCE_DEFAULT_APPLIED",
+                        f"Seam allowance fallback default for {arguments['unit']} was applied.",
+                        "warning",
+                    )
+                ],
+            )
+
+        parse_response = self.call_tool(
+            "parse_dxf",
+            {
+                "schema_version": "1.0",
+                "job_id": job_id,
+                "file_id": arguments["pattern_file_id"],
+                "unit_hint": "auto",
+            },
+        )
+        tool_calls.append("parse_dxf")
+        _extend_unique_messages(warnings, parse_response.get("warnings", []))
+        if _has_blocker(parse_response):
+            return _finalize_marker_yield(state, "parse_dxf", parse_response.get("errors", []))
+
+        dxf_parse_id = parse_response["dxf_parse_id"]
+        state["dxf_parse_id"] = dxf_parse_id
+
+        extract_response = self.call_tool(
+            "extract_pattern_pieces",
+            {
+                "schema_version": "1.0",
+                "job_id": job_id,
+                "dxf_parse_id": dxf_parse_id,
+                "extraction_mode": "closed_polylines_only",
+                "outline_layer_names": [],
+                "grainline_layer_names": [],
+            },
+        )
+        tool_calls.append("extract_pattern_pieces")
+        _extend_unique_messages(warnings, extract_response.get("warnings", []))
+        if _has_blocker(extract_response):
+            return _finalize_marker_yield(state, "extract_pattern_pieces", extract_response.get("errors", []))
+
+        piece_set_id = extract_response["piece_set_id"]
+        state["piece_set_id"] = piece_set_id
+        grainline_status = _infer_marker_yield_grainline_status(extract_response, arguments["grainline_required"])
+        grainline_errors = _marker_yield_grainline_errors(arguments, grainline_status)
+        if grainline_errors:
+            return _finalize_marker_yield(state, "extract_pattern_pieces", grainline_errors)
+        pieces = self.store.get_piece_set(job_id, piece_set_id)
+        expanded_pieces, piece_metadata, size_ratio_warnings = _expand_piece_set_for_size_ratio(
+            pieces,
+            arguments.get("size_ratio", {}),
+            arguments.get("piece_quantity", {}),
+        )
+        _extend_unique_messages(warnings, size_ratio_warnings)
+        expanded_pieces, shrinkage_warnings = _apply_shrinkage_to_pieces(
+            expanded_pieces,
+            _marker_yield_shrinkage(arguments),
+        )
+        _extend_unique_messages(warnings, shrinkage_warnings)
+        if expanded_pieces != pieces:
+            piece_set_id = self.store.store_piece_set(job_id, expanded_pieces)
+            state["piece_set_id"] = piece_set_id
+
+        metrics_response = self.call_tool(
+            "calculate_piece_metrics",
+            {
+                "schema_version": "1.0",
+                "job_id": job_id,
+                "piece_set_id": piece_set_id,
+                "unit": arguments["unit"],
+                "dxf_unit_hint": "auto",
+                "fabric_width": effective_width,
+                "fabric_width_unit": arguments["unit"],
+                "seam_allowance_width": seam_allowance_width,
+            },
+        )
+        tool_calls.append("calculate_piece_metrics")
+        _extend_unique_messages(warnings, metrics_response.get("warnings", []))
+        if _has_blocker(metrics_response):
+            return _finalize_marker_yield(state, "calculate_piece_metrics", metrics_response.get("errors", []))
+
+        metrics_id = metrics_response["metrics_id"]
+        state["metrics_id"] = metrics_id
+        state["dxf_unit"] = metrics_response.get("dxf_unit")
+        state["unit_scale"] = metrics_response.get("unit_scale")
+        one_way_fabric = _marker_yield_one_way_fabric(arguments["nap_direction"])
+
+        layout_response = self.call_tool(
+            "estimate_marker_layout",
+            {
+                "schema_version": "1.0",
+                "job_id": job_id,
+                "metrics_id": metrics_id,
+                "fabric_width": effective_width,
+                "fabric_width_unit": arguments["unit"],
+                "rotation_allowed_degrees": list(arguments["allowed_rotation"]),
+                "clearance": arguments["spacing"],
+                "nap_direction": arguments["nap_direction"],
+                "one_way_fabric": one_way_fabric,
+                "grainline_status": grainline_status,
+                "grainline_required": arguments["grainline_required"],
+                "fabric_type": arguments["fabric_type"],
+            },
+        )
+        tool_calls.append("estimate_marker_layout")
+        _extend_unique_messages(warnings, layout_response.get("warnings", []))
+        if _has_blocker(layout_response):
+            return _finalize_marker_yield(state, "estimate_marker_layout", layout_response.get("errors", []))
+
+        layout_id = layout_response["layout_id"]
+        state["layout_id"] = layout_id
+        state["layout"] = _public_layout(layout_response)
+
+        render_response = self.call_tool(
+            "render_marker_svg",
+            {
+                "schema_version": "1.0",
+                "job_id": job_id,
+                "layout_id": layout_id,
+            },
+        )
+        tool_calls.append("render_marker_svg")
+        _extend_unique_messages(warnings, render_response.get("warnings", []))
+        if _has_blocker(render_response):
+            return _finalize_marker_yield(state, "render_marker_svg", render_response.get("errors", []))
+
+        layout_result = self.store.get_layout(job_id, layout_id)
+        parse_result = self.store.get_dxf_parse(job_id, dxf_parse_id)
+        metrics_result = self.store.get_metrics(job_id, metrics_id)
+        csv_partial = list(partial_csv_fields(_resolved_csv_metadata_fields(piece_metadata)))
+
+        _extend_unique_messages(
+            warnings,
+            [
+                _message(
+                    "REPORT_CSV_PARTIAL_FIELDS",
+                    f"report.csv leaves unavailable piece metadata fields empty: {', '.join(csv_partial) if csv_partial else 'none'}.",
+                    "warning",
+                )
+            ],
+        )
+
+        report_text = render_marker_report(
+            layout_result,
+            warnings=_engine_warnings(warnings),
+            excluded_pieces=parse_result.excluded_candidates,
+            csv_partial_fields=csv_partial,
+        )
+        report_artifact_id = self.store.register_artifact(
+            job_id,
+            "marker_report.md",
+            report_text,
+            media_type="text/markdown",
+        )
+        pdf_artifact_id = self.store.register_artifact(
+            job_id,
+            "marker_report.pdf",
+            render_marker_pdf(report_text),
+            media_type="application/pdf",
+        )
+
+        csv_text = render_marker_csv(
+            _layout_result_in_mm(layout_result),
+            piece_metrics=_piece_metrics_in_mm(metrics_result),
+            piece_metadata=piece_metadata,
+        )
+        csv_artifact_id = self.store.register_artifact(
+            job_id,
+            "report.csv",
+            csv_text,
+            media_type="text/csv",
+        )
+
+        response: ToolResponse = {
+            "status": "completed",
+            "job_id": job_id,
+            "pattern_file_id": arguments["pattern_file_id"],
+            "stopped_at": "completed",
+            "tool_calls": tool_calls,
+            "warnings": warnings,
+            "errors": [],
+            "dxf_parse_id": dxf_parse_id,
+            "piece_set_id": piece_set_id,
+            "metrics_id": metrics_id,
+            "layout_id": layout_id,
+            "dxf_unit": metrics_response.get("dxf_unit"),
+            "unit_scale": metrics_response.get("unit_scale"),
+            "layout": _public_layout(layout_response),
+            "partial_csv_fields": csv_partial,
+            "artifact_ids": {
+                "marker_preview_svg": render_response["artifact_id"],
+                "marker_report_md": report_artifact_id,
+                "marker_report_pdf": pdf_artifact_id,
+                "report_csv": csv_artifact_id,
+            },
+        }
+
+        from fattern.orchestration.chain import validate_final_report
+
+        try:
+            validate_final_report(response, layout_result, report_text, excluded_piece_ids=_excluded_report_ids(parse_result))
+        except Exception as exc:
+            return _finalize_marker_yield(
+                state,
+                "render_marker_report",
+                [_message("REPORT_VALIDATION_FAILED", str(exc), "blocker")],
+            )
+
+        result_artifact_id = self.store.register_artifact(
+            job_id,
+            "result.json",
+            "{}",
+            media_type="application/json",
+        )
+        response["artifact_ids"]["result_json"] = result_artifact_id
+        response["export_artifact_ids"] = [
+            result_artifact_id,
+            render_response["artifact_id"],
+            report_artifact_id,
+            pdf_artifact_id,
+            csv_artifact_id,
+        ]
+        self.store.get_artifact(job_id, result_artifact_id).path.write_text(
+            json.dumps(response, ensure_ascii=False, indent=2, sort_keys=True),
+            encoding="utf-8",
+        )
+        return response
+
 
 def tools_list(registry: McpToolRegistry | None = None) -> dict[str, Any]:
     active_registry = registry or McpToolRegistry()
@@ -290,10 +566,112 @@ def _filter_pieces(
     return tuple(piece for piece in pieces if piece.layer in allowed_layers)
 
 
+def _attach_grainline_metadata(
+    pieces: tuple[PolylineCandidate, ...],
+    line_entities: tuple[DxfLineEntity, ...],
+    grainline_layer_names: list[str],
+) -> tuple[tuple[PolylineCandidate, ...], list[dict[str, str]]]:
+    explicit_layers = {name.strip().lower() for name in grainline_layer_names if name.strip()}
+    candidate_lines: list[tuple[DxfLineEntity, float, str]] = []
+    for line in line_entities:
+        confidence, source = _grainline_line_confidence(line, explicit_layers)
+        if confidence > 0:
+            candidate_lines.append((line, confidence, source))
+
+    warnings: list[dict[str, str]] = []
+    if candidate_lines and not explicit_layers:
+        warnings.append(
+            _message(
+                "GRAINLINE_LAYER_CANDIDATE_DETECTED",
+                "Grainline line candidates were detected by deterministic layer rules; verify before production use.",
+                "warning",
+            )
+        )
+    if any(source == "aama_astm_candidate" for _line, _confidence, source in candidate_lines):
+        warnings.append(
+            _message(
+                "AAMA_ASTM_LAYER_MAPPING_UNVERIFIED",
+                "Numeric DXF layer grainline mapping is treated as a low-confidence candidate because local evidence is insufficient.",
+                "warning",
+            )
+        )
+    internal_count = max(0, len(line_entities) - len(candidate_lines))
+    if internal_count:
+        warnings.append(
+            _message(
+                "INTERNAL_LINE_EXCLUDED",
+                f"{internal_count} LINE entities were treated as internal lines and excluded from area and bbox metrics.",
+                "warning",
+            )
+        )
+
+    annotated: list[PolylineCandidate] = []
+    for piece in pieces:
+        matching = _matching_grainline(piece, candidate_lines)
+        if matching is None:
+            annotated.append(piece)
+            continue
+        line, confidence, _source = matching
+        annotated.append(
+            replace(
+                piece,
+                has_grainline=True,
+                grainline_confidence=confidence,
+                grainline_layer=line.layer,
+                grainline_start=line.start,
+                grainline_end=line.end,
+            )
+        )
+    return tuple(annotated), warnings
+
+
+def _grainline_line_confidence(line: DxfLineEntity, explicit_layers: set[str]) -> tuple[float, str]:
+    normalized = line.layer.strip().lower()
+    if normalized in explicit_layers:
+        return 1.0, "explicit"
+    compact = normalized.replace("_", "").replace("-", "").replace(" ", "")
+    if compact in {"grain", "grainline", "grainln"}:
+        return 0.8, "layer_name"
+    if normalized == "7":
+        return 0.6, "aama_astm_candidate"
+    return 0.0, ""
+
+
+def _matching_grainline(
+    piece: PolylineCandidate,
+    candidate_lines: list[tuple[DxfLineEntity, float, str]],
+) -> tuple[DxfLineEntity, float, str] | None:
+    for line, confidence, source in candidate_lines:
+        if _line_midpoint_inside_piece(line, piece):
+            return line, confidence, source
+    return None
+
+
+def _line_midpoint_inside_piece(line: DxfLineEntity, piece: PolylineCandidate) -> bool:
+    x = (line.start[0] + line.end[0]) / 2.0
+    y = (line.start[1] + line.end[1]) / 2.0
+    return _point_in_polygon((x, y), piece.points)
+
+
+def _point_in_polygon(point: tuple[float, float], polygon: tuple[tuple[float, float], ...]) -> bool:
+    x, y = point
+    inside = False
+    j = len(polygon) - 1
+    for i, current in enumerate(polygon):
+        previous = polygon[j]
+        intersects = (current[1] > y) != (previous[1] > y)
+        if intersects:
+            x_intersection = (previous[0] - current[0]) * (y - current[1]) / (previous[1] - current[1]) + current[0]
+            if x <= x_intersection:
+                inside = not inside
+        j = i
+    return inside
+
+
 def _entity_summary(result: Any) -> dict[str, Any]:
     layers = {
         item.layer
-        for item in (*result.piece_candidates, *result.excluded_candidates)
+        for item in (*result.piece_candidates, *result.excluded_candidates, *result.line_entities, *result.text_entities)
         if getattr(item, "layer", None) is not None
     }
     return {
@@ -308,15 +686,20 @@ def _entity_summary(result: Any) -> dict[str, Any]:
         "closed_lwpolyline_count": result.summary.closed_lwpolyline_count,
         "open_lwpolyline_count": result.summary.open_lwpolyline_count,
         "unsupported_entity_types": list(result.summary.unsupported_entity_types),
+        "line_entity_count": len(result.line_entities),
+        "text_entity_count": len(result.text_entities),
     }
 
 
 def _piece_summary(piece: PolylineCandidate) -> dict[str, Any]:
     return {
         "piece_id": piece.piece_id,
-        "piece_name": None,
+        "piece_name": piece.piece_name,
+        "size": piece.size,
         "closed": piece.closed,
-        "has_grainline": False,
+        "has_grainline": piece.has_grainline,
+        "grainline_confidence": piece.grainline_confidence,
+        "grainline_layer": piece.grainline_layer,
         "entity_source": "LWPOLYLINE",
         "estimated_point_count": len(piece.points),
     }
@@ -325,12 +708,13 @@ def _piece_summary(piece: PolylineCandidate) -> dict[str, Any]:
 def _piece_metrics(metric: PieceMetrics) -> dict[str, Any]:
     return {
         "piece_id": metric.piece_id,
-        "piece_name": None,
+        "piece_name": metric.piece_name,
+        "size": metric.size,
         "area": metric.area,
         "perimeter": metric.perimeter,
         "bbox": {"width": metric.bbox.width, "height": metric.bbox.height},
         "valid": True,
-        "has_grainline": False,
+        "has_grainline": metric.has_grainline,
         "unit": metric.unit,
         "point_count": metric.point_count,
         "seam_allowance_width": metric.seam_allowance_width,
@@ -448,3 +832,489 @@ def _redact_internal_path(message: str) -> str:
     if re.search(r"([A-Za-z]:\\|\\\\|/[A-Za-z0-9_.-]+/|[A-Za-z]:/)", clean):
         return "Internal file access failed."
     return clean[:500]
+
+
+def _validate_marker_yield_request(arguments: dict[str, Any]) -> ToolResponse | None:
+    size_ratio = arguments.get("size_ratio", {})
+    if not isinstance(size_ratio, dict):
+        return _error_response("TOOL_VALIDATION_FAILED", "Tool input validation failed.")
+    for size_name, quantity in size_ratio.items():
+        if not isinstance(size_name, str) or not size_name.strip():
+            return _error_response("TOOL_VALIDATION_FAILED", "Tool input validation failed.")
+        if not isinstance(quantity, int) or isinstance(quantity, bool) or quantity < 1:
+            return _error_response("TOOL_VALIDATION_FAILED", "Tool input validation failed.")
+
+    piece_quantity = arguments.get("piece_quantity", {})
+    if not isinstance(piece_quantity, dict):
+        return _error_response("TOOL_VALIDATION_FAILED", "Tool input validation failed.")
+    for piece_id, quantity in piece_quantity.items():
+        if not isinstance(piece_id, str) or not piece_id.strip():
+            return _error_response("TOOL_VALIDATION_FAILED", "Tool input validation failed.")
+        if not isinstance(quantity, int) or isinstance(quantity, bool) or quantity < 1:
+            return _error_response("TOOL_VALIDATION_FAILED", "Tool input validation failed.")
+
+    cuttable_width = arguments.get("cuttable_width")
+    if cuttable_width is not None and cuttable_width > arguments["fabric_width"]:
+        return _error_response(
+            "INVALID_CUTTABLE_WIDTH",
+            "cuttable_width must not be greater than fabric_width.",
+        )
+
+    shrinkage = _marker_yield_shrinkage(arguments)
+    if shrinkage["length_percent"] >= 100 or shrinkage["width_percent"] >= 100:
+        return _error_response(
+            "INVALID_SHRINKAGE_PERCENT",
+            "shrinkage percent values must be less than 100.",
+        )
+
+    if arguments.get("nap_direction") == "unknown":
+        return _error_response(
+            "NAP_DIRECTION_UNKNOWN",
+            "nap_direction must be explicitly set before calculating marker yield.",
+        )
+
+    if arguments.get("nap_direction") == "one_way" and 180 in arguments.get("allowed_rotation", []):
+        return _error_response(
+            "NAP_ROTATION_NOT_ALLOWED",
+            "nap_direction=one_way does not allow 180 degree rotation.",
+        )
+
+    seam_allowance = arguments.get("seam_allowance", {})
+    if seam_allowance.get("status") == "unknown":
+        return _error_response(
+            "SEAM_ALLOWANCE_STATUS_UNKNOWN",
+            "Seam allowance status must be included or excluded for calculate_marker_yield.",
+        )
+    return None
+
+
+def _marker_yield_preflight_warnings(arguments: dict[str, Any]) -> list[dict[str, str]]:
+    warnings: list[dict[str, str]] = []
+    if arguments.get("cuttable_width") is not None:
+        warnings.append(
+            _message(
+                "CUTTABLE_WIDTH_APPLIED",
+                "cuttable_width was used instead of fabric_width for marker estimation.",
+                "warning",
+            )
+        )
+    if arguments.get("fabric_type") != "unknown":
+        warnings.append(
+            _message(
+                "FABRIC_TYPE_POLICY_PARTIAL",
+                "fabric_type-specific policy is only partially applied in the current MCP layer.",
+                "warning",
+            )
+        )
+    if arguments.get("fabric_type") == "knit":
+        warnings.append(
+            _message(
+                "STRETCH_DIRECTION_NOT_APPLIED",
+                "fabric_type=knit accepts stretch_direction, but stretch matching is not applied in the current marker engine.",
+                "warning",
+            )
+        )
+    return warnings
+
+
+def _expand_piece_set_for_size_ratio(
+    pieces: tuple[PolylineCandidate, ...],
+    size_ratio: dict[str, Any],
+    piece_quantity: dict[str, Any],
+) -> tuple[tuple[PolylineCandidate, ...], dict[str, PieceReportMetadata], list[dict[str, str]]]:
+    if not size_ratio:
+        return _expand_piece_set_for_quantities(pieces, piece_quantity)
+
+    expanded: list[PolylineCandidate] = []
+    metadata: dict[str, PieceReportMetadata] = {}
+    for size_index, (size_name, quantity) in enumerate(size_ratio.items(), start=1):
+        for piece in pieces:
+            requested_piece_quantity = _piece_quantity_for(piece, piece_quantity)
+            for copy_index in range(1, int(quantity) * requested_piece_quantity + 1):
+                piece_id = f"{piece.piece_id}_s{size_index:02d}_q{copy_index:02d}"
+                expanded.append(replace(piece, piece_id=piece_id))
+                metadata[piece_id] = PieceReportMetadata(
+                    piece_name=piece.piece_name,
+                    size=str(size_name),
+                    quantity=1,
+                    grainline_status="present" if piece.has_grainline else None,
+                )
+
+    warnings = [
+        _message(
+            "SIZE_RATIO_BASE_SIZE_REPLICATED",
+            "size_ratio was applied by replicating base-size outlines; grading differences were not inferred.",
+            "warning",
+        )
+    ]
+    if any(_piece_quantity_for(piece, piece_quantity) != 1 for piece in pieces):
+        warnings.append(
+            _message(
+                "PIECE_QUANTITY_APPLIED",
+                "piece_quantity was applied by replicating matching base-size outlines.",
+                "warning",
+            )
+        )
+    return tuple(expanded), metadata, warnings
+
+
+def _expand_piece_set_for_quantities(
+    pieces: tuple[PolylineCandidate, ...],
+    piece_quantity: dict[str, Any],
+) -> tuple[tuple[PolylineCandidate, ...], dict[str, PieceReportMetadata], list[dict[str, str]]]:
+    expanded: list[PolylineCandidate] = []
+    metadata: dict[str, PieceReportMetadata] = {}
+    changed = False
+    for piece in pieces:
+        quantity = _piece_quantity_for(piece, piece_quantity)
+        changed = changed or quantity != 1
+        for copy_index in range(1, quantity + 1):
+            piece_id = piece.piece_id if quantity == 1 else f"{piece.piece_id}_q{copy_index:02d}"
+            expanded.append(replace(piece, piece_id=piece_id))
+            metadata[piece_id] = PieceReportMetadata(
+                piece_name=piece.piece_name,
+                size=piece.size,
+                quantity=1,
+                grainline_status="present" if piece.has_grainline else None,
+            )
+    warnings = [
+        _message(
+            "PIECE_QUANTITY_APPLIED",
+            "piece_quantity was applied by replicating matching base-size outlines.",
+            "warning",
+        )
+    ] if changed else []
+    return tuple(expanded), metadata, warnings
+
+
+def _piece_quantity_for(piece: PolylineCandidate, piece_quantity: dict[str, Any]) -> int:
+    value = piece_quantity.get(piece.piece_id, piece_quantity.get("*", 1))
+    return int(value)
+
+
+def _apply_shrinkage_to_pieces(
+    pieces: tuple[PolylineCandidate, ...],
+    shrinkage: dict[str, float],
+) -> tuple[tuple[PolylineCandidate, ...], list[dict[str, str]]]:
+    length_percent = float(shrinkage["length_percent"])
+    width_percent = float(shrinkage["width_percent"])
+    if length_percent <= 0 and width_percent <= 0:
+        return pieces, []
+    if not pieces or any(piece.grainline_start is None or piece.grainline_end is None for piece in pieces):
+        return (
+            pieces,
+            [
+                _message(
+                    "SHRINKAGE_PERCENT_NOT_APPLIED",
+                    "shrinkage_percent requires piece-level grainline and was not applied.",
+                    "warning",
+                )
+            ],
+        )
+
+    length_scale = 100.0 / (100.0 - length_percent) if length_percent > 0 else 1.0
+    width_scale = 100.0 / (100.0 - width_percent) if width_percent > 0 else 1.0
+    expanded = tuple(
+        replace(piece, points=_scale_piece_along_grainline(piece, length_scale, width_scale))
+        for piece in pieces
+    )
+    return (
+        expanded,
+        [
+            _message(
+                "SHRINKAGE_APPLIED",
+                f"shrinkage was applied along detected grainline with length scale {length_scale:.6g} and width scale {width_scale:.6g}.",
+                "warning",
+            )
+        ],
+    )
+
+
+def _scale_piece_along_grainline(
+    piece: PolylineCandidate,
+    length_scale: float,
+    width_scale: float,
+) -> tuple[tuple[float, float], ...]:
+    assert piece.grainline_start is not None
+    assert piece.grainline_end is not None
+    dx = piece.grainline_end[0] - piece.grainline_start[0]
+    dy = piece.grainline_end[1] - piece.grainline_start[1]
+    length = hypot(dx, dy)
+    if length <= 0:
+        return piece.points
+    ux = dx / length
+    uy = dy / length
+    vx = -uy
+    vy = ux
+    center_x = sum(point[0] for point in piece.points) / len(piece.points)
+    center_y = sum(point[1] for point in piece.points) / len(piece.points)
+    scaled: list[tuple[float, float]] = []
+    for x, y in piece.points:
+        rel_x = x - center_x
+        rel_y = y - center_y
+        along = rel_x * ux + rel_y * uy
+        across = rel_x * vx + rel_y * vy
+        scaled.append(
+            (
+                center_x + along * length_scale * ux + across * width_scale * vx,
+                center_y + along * length_scale * uy + across * width_scale * vy,
+            )
+        )
+    return tuple(scaled)
+
+
+def _marker_yield_shrinkage(arguments: dict[str, Any]) -> dict[str, float]:
+    configured = arguments.get("shrinkage")
+    if isinstance(configured, dict):
+        length = configured.get("length_percent", arguments.get("shrinkage_percent", 0))
+        width = configured.get("width_percent", 0)
+    else:
+        length = arguments.get("shrinkage_percent", 0)
+        width = 0
+    return {
+        "length_percent": float(length),
+        "width_percent": float(width),
+    }
+
+
+def _resolved_csv_metadata_fields(piece_metadata: dict[str, PieceReportMetadata]) -> tuple[str, ...]:
+    resolved: list[str] = []
+    if piece_metadata and all(item.size is not None for item in piece_metadata.values()):
+        resolved.append("size")
+    if piece_metadata and all(item.quantity is not None for item in piece_metadata.values()):
+        resolved.append("quantity")
+    if piece_metadata and all(item.grainline_status is not None for item in piece_metadata.values()):
+        resolved.append("grainline_status")
+    if piece_metadata and all(item.piece_name is not None for item in piece_metadata.values()):
+        resolved.append("piece_name")
+    return tuple(resolved)
+
+
+def _resolve_seam_allowance_width(seam_allowance: dict[str, Any], unit: str) -> float:
+    from fattern.engine.metrics import default_seam_allowance_width
+
+    if seam_allowance["status"] == "included":
+        return 0.0
+    fallback_width = seam_allowance.get("fallback_width")
+    if isinstance(fallback_width, (int, float)) and not isinstance(fallback_width, bool) and fallback_width >= 0:
+        return float(fallback_width)
+    return default_seam_allowance_width(unit)
+
+
+def _infer_marker_yield_grainline_status(extract_response: ToolResponse, grainline_required: bool) -> str:
+    pieces = extract_response.get("piece_summary", [])
+    if pieces and all(piece.get("has_grainline") is True for piece in pieces):
+        return "present"
+    return "missing" if grainline_required else "unknown"
+
+
+def _marker_yield_one_way_fabric(nap_direction: str) -> bool | None:
+    if nap_direction == "one_way":
+        return True
+    if nap_direction in {"two_way", "none", "no_nap", "not_one_way"}:
+        return False
+    return None
+
+
+def _marker_yield_grainline_errors(arguments: dict[str, Any], grainline_status: str) -> list[dict[str, str]]:
+    if grainline_status == "present":
+        return []
+    if arguments.get("nap_direction") == "one_way":
+        return [
+            _message(
+                "MISSING_GRAINLINE_ON_ONE_WAY_FABRIC",
+                "nap_direction=one_way requires grainline before calculating marker yield.",
+                "blocker",
+            )
+        ]
+    if arguments.get("grainline_required") is True:
+        return [
+            _message(
+                "MISSING_GRAINLINE_REQUIRED",
+                "Grainline is required before calculating marker yield.",
+                "blocker",
+            )
+        ]
+    if arguments.get("fabric_type") == "woven":
+        return [
+            _message(
+                "MISSING_GRAINLINE_FOR_WOVEN",
+                "fabric_type=woven requires grainline before calculating marker yield.",
+                "blocker",
+            )
+        ]
+    return []
+
+
+def _has_blocker(response: ToolResponse) -> bool:
+    return any(error.get("severity") == "blocker" for error in response.get("errors", []))
+
+
+def _finalize_marker_yield(
+    state: ToolResponse,
+    stopped_at: str,
+    errors: list[dict[str, str]],
+) -> ToolResponse:
+    response: ToolResponse = {
+        "status": "blocked",
+        "job_id": state["job_id"],
+        "pattern_file_id": state["pattern_file_id"],
+        "stopped_at": stopped_at,
+        "tool_calls": list(state.get("tool_calls", [])),
+        "warnings": list(state.get("warnings", [])),
+        "errors": list(errors),
+    }
+    for key in ("dxf_parse_id", "piece_set_id", "metrics_id", "layout_id", "dxf_unit", "unit_scale", "layout"):
+        if key in state:
+            response[key] = state[key]
+
+    result_artifact_id = None
+    job_id = state.get("job_id")
+    if isinstance(job_id, str):
+        result_artifact_id = _register_result_json_artifact(
+            state.get("store"),
+            job_id,
+            response,
+        )
+    if result_artifact_id is not None:
+        response["artifact_ids"] = {"result_json": result_artifact_id}
+        response["export_artifact_ids"] = [result_artifact_id]
+    return response
+
+
+def _register_result_json_artifact(store: JobStore | None, job_id: str, response: ToolResponse) -> str | None:
+    if store is None:
+        return None
+    result_artifact_id = store.register_artifact(
+        job_id,
+        "result.json",
+        "{}",
+        media_type="application/json",
+    )
+    store.get_artifact(job_id, result_artifact_id).path.write_text(
+        json.dumps(
+            {
+                **response,
+                "artifact_ids": {"result_json": result_artifact_id},
+                "export_artifact_ids": [result_artifact_id],
+            },
+            ensure_ascii=False,
+            indent=2,
+            sort_keys=True,
+        ),
+        encoding="utf-8",
+    )
+    return result_artifact_id
+
+
+def _public_layout(response: ToolResponse) -> dict[str, Any]:
+    return {
+        "fabric_width": response["fabric_width"],
+        "marker_length": response["marker_length"],
+        "efficiency": response["efficiency"],
+        "clearance": response["clearance"],
+        "unit": response["unit"],
+        "total_piece_area": response["total_piece_area"],
+        "rotation_allowed_degrees": list(response["rotation_allowed_degrees"]),
+        "grainline_status": response.get("grainline_status", "unknown"),
+        "one_way_fabric": response.get("one_way_fabric"),
+        "layout_summary": response["layout_summary"],
+        "validity": response["validity"],
+    }
+
+
+def _engine_warnings(warnings: list[dict[str, Any]]) -> tuple[EngineMessage, ...]:
+    messages: list[EngineMessage] = []
+    for warning in warnings:
+        if warning.get("severity") != "warning":
+            continue
+        messages.append(
+            EngineMessage(
+                code=str(warning.get("code", "WARNING")),
+                message=str(warning.get("message", "Warning")),
+                severity="warning",
+            )
+        )
+    return tuple(messages)
+
+
+def _extend_unique_messages(target: list[dict[str, Any]], messages: list[dict[str, Any]]) -> None:
+    seen = {
+        (
+            message.get("code"),
+            message.get("message"),
+            message.get("severity"),
+        )
+        for message in target
+    }
+    for message in messages:
+        key = (
+            message.get("code"),
+            message.get("message"),
+            message.get("severity"),
+        )
+        if key in seen:
+            continue
+        target.append(message)
+        seen.add(key)
+
+
+_UNIT_TO_MM = {
+    "mm": 1.0,
+    "cm": 10.0,
+    "m": 1000.0,
+    "inch": 25.4,
+    "ft": 304.8,
+    "yd": 914.4,
+}
+
+
+def _layout_result_in_mm(result: LayoutResult) -> LayoutResult:
+    scale = _UNIT_TO_MM.get(result.unit, 1.0)
+    area_scale = scale * scale
+    placements = tuple(
+        replace(
+            placement,
+            x=placement.x * scale,
+            y=placement.y * scale,
+            width=placement.width * scale,
+            height=placement.height * scale,
+        )
+        for placement in result.placements
+    )
+    return replace(
+        result,
+        placements=placements,
+        fabric_width=result.fabric_width * scale,
+        marker_length=result.marker_length * scale,
+        clearance=result.clearance * scale,
+        unit="mm",
+        total_piece_area=result.total_piece_area * area_scale,
+    )
+
+
+def _piece_metrics_in_mm(result: MetricsResult) -> dict[str, PieceMetrics]:
+    converted: dict[str, PieceMetrics] = {}
+    for metric in result.metrics:
+        scale = _UNIT_TO_MM.get(metric.unit, 1.0)
+        area_scale = scale * scale
+        converted_metric = replace(
+            metric,
+            bbox=BoundingBox(
+                min_x=metric.bbox.min_x * scale,
+                min_y=metric.bbox.min_y * scale,
+                max_x=metric.bbox.max_x * scale,
+                max_y=metric.bbox.max_y * scale,
+            ),
+            area=metric.area * area_scale,
+            perimeter=metric.perimeter * scale,
+            unit="mm",
+            points=tuple((point[0] * scale, point[1] * scale) for point in metric.points),
+            seam_allowance_width=metric.seam_allowance_width * scale,
+        )
+        converted[metric.piece_id] = converted_metric
+    return converted
+
+
+def _excluded_report_ids(parse_result: Any) -> tuple[str, ...]:
+    return tuple(f"entity_{item.source_entity_index:04d}" for item in parse_result.excluded_candidates)

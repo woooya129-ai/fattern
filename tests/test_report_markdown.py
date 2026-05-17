@@ -66,6 +66,10 @@ class MarkdownReportTests(unittest.TestCase):
         self.assertIn("- `SMALL_GAP` gap \\| check &lt;safe&gt;", report)
         self.assertIn("| bad\\|piece | L&lt;1&gt; | `OPENPOLY` | open \\| line |", report)
         self.assertIn("| entity\\_0007 | raw\\|layer | `UNSUPPORTED_ENTITY` | ignored &lt;LINE&gt; |", report)
+        self.assertIn(
+            "- unavailable piece metadata fields stay empty in `report.csv`: piece_name, size, quantity, grainline_status",
+            report,
+        )
 
     def test_empty_sections_are_explicit(self) -> None:
         empty = LayoutResult(

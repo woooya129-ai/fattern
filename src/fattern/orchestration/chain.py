@@ -14,7 +14,8 @@ from typing import Any
 
 from fattern.engine import EngineMessage, ExcludedCandidate, LayoutResult
 from fattern.mcp import McpToolRegistry
-from fattern.orchestration.intent import validate_user_intent
+from fattern.orchestration.intent import normalize_user_intent, validate_user_intent
+from fattern.schemas import DEFAULT_CLEARANCE_CM, ID_PATTERN
 from fattern.render import render_marker_svg
 from fattern.report import render_marker_report
 
@@ -23,6 +24,7 @@ ToolResponse = dict[str, Any]
 STOPPED_AT_VALUES = frozenset(
     {
         "completed",
+        "adapt_marker_yield_request",
         "normalize_user_intent",
         "create_job",
         "register_input_file",
@@ -42,6 +44,19 @@ CHAIN_STEPS = (
     "calculate_piece_metrics",
     "estimate_marker_layout",
 )
+
+ADAPTER_STOPPED_AT = "adapt_marker_yield_request"
+
+ADAPTER_UNSUPPORTED_FIELDS = (
+    "size_ratio",
+    "piece_quantity",
+    "shrinkage",
+    "fabric_type",
+    "stretch_direction",
+)
+
+VALID_HIGH_LEVEL_ROTATIONS = {0, 90, 180, 270}
+NON_ONE_WAY_NAP_DIRECTIONS = {"two_way", "none", "no_nap", "not_one_way"}
 
 REPORT_NUMERIC_FIELDS = (
     "fabric_width",
@@ -205,6 +220,7 @@ def execute_marker_estimation(
             "clearance": user_intent["rules"]["clearance"],
             "one_way_fabric": user_intent["rules"]["one_way_fabric"],
             "grainline_status": _grainline_status(extract_response, user_intent),
+            "grainline_required": user_intent["rules"]["grainline_required"],
         },
     )
     if _blocked(layout_response):
@@ -258,10 +274,294 @@ def execute_marker_estimation(
     return _finalize(state)
 
 
+def adapt_marker_yield_request(request: Mapping[str, Any]) -> dict[str, Any]:
+    """Convert the v0.4 high-level request shape into existing UserIntent.
+
+    This adapter only maps fields already represented in UserIntent and the
+    ORCH-002 tool chain. Fields that need schema or engine policy support are
+    reported as blockers instead of being silently ignored.
+    """
+
+    if not isinstance(request, Mapping):
+        return _adapter_blocker(
+            [_message("INVALID_MARKER_YIELD_REQUEST", "High-level marker yield request must be an object.", "blocker")]
+        )
+
+    warnings: list[dict[str, Any]] = []
+    errors = _high_level_request_blockers(request)
+    if errors:
+        return _adapter_blocker(errors, warnings)
+
+    fabric_width = _selected_fabric_width(request, warnings)
+    seam_allowance = _adapt_seam_allowance(request)
+    raw_intent = {
+        "file_id": request.get("pattern_file_id"),
+        "unit": request.get("unit"),
+        "fabric_width": fabric_width,
+        "rules": {
+            "grainline_required": _high_level_bool(request.get("grainline_required"), default=True),
+            "seam_allowance_included": seam_allowance["included"],
+            "seam_allowance_width": seam_allowance["width"],
+            "one_way_fabric": _adapt_nap_direction(request.get("nap_direction"), warnings),
+            "rotation_allowed_degrees": _adapt_allowed_rotation(request.get("allowed_rotation")),
+            "clearance": _adapt_spacing(request.get("spacing"), warnings),
+        },
+    }
+    intent = normalize_user_intent(raw_intent)
+    return {
+        "status": "ready",
+        "stopped_at": None,
+        "user_intent": intent,
+        "warnings": warnings,
+        "errors": [],
+    }
+
+
+def execute_marker_yield_request(
+    request: Mapping[str, Any],
+    *,
+    dxf_file_name: str | None = None,
+    dxf_content: bytes | str | None = None,
+    registry: McpToolRegistry | None = None,
+    job_name: str = "fattern",
+    user_note: str = "",
+) -> dict[str, Any]:
+    """Run a high-level marker yield request through the existing chain when safe."""
+
+    adapted = adapt_marker_yield_request(request)
+    if adapted["status"] == "blocked":
+        return adapted
+
+    user_intent = adapted["user_intent"]
+    missing_fields = list(user_intent.get("missing_fields", []))
+    if missing_fields:
+        return {
+            "status": "needs_clarification",
+            "stopped_at": "normalize_user_intent",
+            "missing_fields": missing_fields,
+            "tool_calls": [],
+            "warnings": adapted["warnings"],
+            "errors": [],
+        }
+
+    if dxf_file_name is None or dxf_content is None:
+        return _adapter_blocker(
+            [
+                _message(
+                    "PATTERN_FILE_MAPPING_UNRESOLVED",
+                    "pattern_file_id cannot be resolved to an existing job/file mapping by the current orchestration contract.",
+                    "blocker",
+                )
+            ],
+            adapted["warnings"],
+        )
+
+    result = execute_marker_estimation(
+        user_intent,
+        dxf_file_name=dxf_file_name,
+        dxf_content=dxf_content,
+        registry=registry,
+        job_name=job_name,
+        user_note=user_note,
+    )
+    if adapted["warnings"]:
+        merged_warnings = list(adapted["warnings"])
+        _extend_unique_warnings(merged_warnings, result.get("warnings", []))
+        result["warnings"] = merged_warnings
+    return result
+
+
 def validate_stopped_at(value: object) -> str:
     if not isinstance(value, str) or value not in STOPPED_AT_VALUES:
         raise ChainResultValidationError(f"Invalid stopped_at value: {value!r}")
     return value
+
+
+def _high_level_request_blockers(request: Mapping[str, Any]) -> list[dict[str, str]]:
+    blockers: list[dict[str, str]] = []
+    for field in ADAPTER_UNSUPPORTED_FIELDS:
+        if field in request and request.get(field) not in (None, {}, []):
+            blockers.append(
+                _message(
+                    f"{field.upper()}_UNSUPPORTED_BY_CHAIN",
+                    f"{field} is not represented in the existing UserIntent or MCP tool-chain contract.",
+                    "blocker",
+                )
+            )
+
+    shrinkage = request.get("shrinkage_percent")
+    if shrinkage not in (None, 0, 0.0):
+        blockers.append(
+            _message(
+                "SHRINKAGE_UNSUPPORTED_BY_CHAIN",
+                "shrinkage_percent has no existing UserIntent or MCP tool-chain mapping.",
+                "blocker",
+            )
+        )
+
+    pattern_file_id = request.get("pattern_file_id")
+    if pattern_file_id is not None and (
+        not isinstance(pattern_file_id, str)
+        or not pattern_file_id.startswith("file_")
+        or re.fullmatch(ID_PATTERN, pattern_file_id) is None
+    ):
+        blockers.append(_message("INVALID_PATTERN_FILE_ID", "pattern_file_id must be an opaque file id.", "blocker"))
+
+    if _invalid_non_negative_number(request, "cuttable_width"):
+        blockers.append(_message("INVALID_CUTTABLE_WIDTH", "cuttable_width must be a positive number.", "blocker"))
+    if _invalid_non_negative_number(request, "fabric_width"):
+        blockers.append(_message("INVALID_FABRIC_WIDTH", "fabric_width must be a positive number.", "blocker"))
+    if _invalid_non_negative_number(request, "spacing", allow_zero=True):
+        blockers.append(_message("INVALID_SPACING", "spacing must be zero or greater.", "blocker"))
+
+    if _invalid_allowed_rotation(request.get("allowed_rotation")):
+        blockers.append(
+            _message(
+                "INVALID_ALLOWED_ROTATION",
+                "allowed_rotation must contain only 0, 90, 180, or 270.",
+                "blocker",
+            )
+        )
+
+    nap_direction = request.get("nap_direction")
+    normalized_nap = _normalized_text(nap_direction)
+    if nap_direction is not None and normalized_nap not in {"one_way", *NON_ONE_WAY_NAP_DIRECTIONS}:
+        blockers.append(
+            _message(
+                "UNSUPPORTED_NAP_DIRECTION",
+                "nap_direction cannot be safely mapped to one_way_fabric.",
+                "blocker",
+            )
+        )
+
+    seam_allowance = request.get("seam_allowance")
+    if seam_allowance is not None:
+        if not isinstance(seam_allowance, Mapping):
+            blockers.append(_message("INVALID_SEAM_ALLOWANCE", "seam_allowance must be an object.", "blocker"))
+        else:
+            status = _normalized_text(seam_allowance.get("status"))
+            if status not in {"included", "excluded", "unknown", ""}:
+                blockers.append(
+                    _message("INVALID_SEAM_ALLOWANCE_STATUS", "seam_allowance.status is not supported.", "blocker")
+                )
+            fallback_width = seam_allowance.get("fallback_width")
+            if fallback_width is not None and (
+                not isinstance(fallback_width, (int, float)) or isinstance(fallback_width, bool) or fallback_width < 0
+            ):
+                blockers.append(
+                    _message(
+                        "INVALID_SEAM_ALLOWANCE_WIDTH",
+                        "seam_allowance.fallback_width must be zero or greater.",
+                        "blocker",
+                    )
+                )
+
+    return blockers
+
+
+def _selected_fabric_width(request: Mapping[str, Any], warnings: list[dict[str, Any]]) -> Any:
+    cuttable_width = request.get("cuttable_width")
+    if cuttable_width is not None:
+        warnings.append(
+            _message(
+                "CUTTABLE_WIDTH_USED",
+                "cuttable_width was mapped to fabric.width because it has priority over fabric_width.",
+                "warning",
+            )
+        )
+        return cuttable_width
+    return request.get("fabric_width")
+
+
+def _adapt_spacing(value: Any, warnings: list[dict[str, Any]]) -> Any:
+    if value is None:
+        return DEFAULT_CLEARANCE_CM
+    warnings.append(
+        _message(
+            "SPACING_MAPPED_TO_CLEARANCE",
+            "spacing was mapped to rules.clearance because both represent minimum piece gap in the selected unit.",
+            "warning",
+        )
+    )
+    return value
+
+
+def _adapt_allowed_rotation(value: Any) -> list[int]:
+    if value is None:
+        return [0]
+    return [int(rotation) for rotation in value]
+
+
+def _adapt_nap_direction(value: Any, warnings: list[dict[str, Any]]) -> bool | None:
+    normalized = _normalized_text(value)
+    if normalized == "one_way":
+        warnings.append(
+            _message(
+                "NAP_DIRECTION_ONE_WAY_MAPPED",
+                "nap_direction=one_way was mapped to rules.one_way_fabric=true.",
+                "warning",
+            )
+        )
+        return True
+    if normalized in NON_ONE_WAY_NAP_DIRECTIONS:
+        return False
+    return None
+
+
+def _adapt_seam_allowance(request: Mapping[str, Any]) -> dict[str, Any]:
+    seam_allowance = request.get("seam_allowance")
+    if not isinstance(seam_allowance, Mapping):
+        return {"included": None, "width": None}
+    status = _normalized_text(seam_allowance.get("status"))
+    if status == "included":
+        return {"included": True, "width": None}
+    if status == "excluded":
+        return {"included": False, "width": seam_allowance.get("fallback_width")}
+    return {"included": None, "width": None}
+
+
+def _high_level_bool(value: Any, *, default: bool) -> bool:
+    if isinstance(value, bool):
+        return value
+    return default
+
+
+def _invalid_non_negative_number(request: Mapping[str, Any], field: str, *, allow_zero: bool = False) -> bool:
+    value = request.get(field)
+    if value is None:
+        return False
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        return True
+    return value < 0 if allow_zero else value < 1
+
+
+def _invalid_allowed_rotation(value: Any) -> bool:
+    if value is None:
+        return False
+    if not isinstance(value, list) or not value:
+        return True
+    return any(
+        not isinstance(rotation, int) or isinstance(rotation, bool) or rotation not in VALID_HIGH_LEVEL_ROTATIONS
+        for rotation in value
+    )
+
+
+def _normalized_text(value: Any) -> str:
+    return value.strip().lower() if isinstance(value, str) else ""
+
+
+def _adapter_blocker(errors: list[dict[str, str]], warnings: list[dict[str, Any]] | None = None) -> dict[str, Any]:
+    return {
+        "status": "blocked",
+        "stopped_at": ADAPTER_STOPPED_AT,
+        "tool_calls": [],
+        "warnings": list(warnings or []),
+        "errors": errors,
+    }
+
+
+def _message(code: str, message: str, severity: str) -> dict[str, str]:
+    return {"code": code, "message": message, "severity": severity}
 
 
 def validate_final_report(

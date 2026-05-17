@@ -114,7 +114,9 @@ def render_marker_svg(result: LayoutResult, title: str = "Marker layout") -> str
 
     _append_info_panel(svg, result, x=result.fabric_width + info_gap, width=info_width)
 
-    return ElementTree.tostring(svg, encoding="unicode", short_empty_elements=True)
+    rendered = ElementTree.tostring(svg, encoding="unicode", short_empty_elements=True)
+    _validate_safe_svg(rendered)
+    return rendered
 
 
 def _warning_codes(messages: Sequence[EngineMessage]) -> tuple[str, ...]:
@@ -238,3 +240,11 @@ def _fmt(value: float) -> str:
 
 def _points(points: Sequence[tuple[float, float]]) -> str:
     return " ".join(f"{_fmt(point[0])},{_fmt(point[1])}" for point in points)
+
+
+def _validate_safe_svg(svg_text: str) -> None:
+    forbidden_tokens = ("<script", "<foreignObject", "href=", "xlink:href=", "<image", "url(")
+    lowered = svg_text.lower()
+    for token in forbidden_tokens:
+        if token.lower() in lowered:
+            raise ValueError(f"Unsafe SVG content detected: {token}")

@@ -26,18 +26,30 @@ result.json
 marker_preview.svg
 marker_report.md
 
-# Local tool state and personal settings
+# Local tool state, AI agent instructions, and personal settings
 .claude/
 .codex/
 .cursor/
 .idea/
 .vscode/
+.windsurf/
+.roo/
+.copilot/
+.aider*
+.agents/
+AGENTS.md
+AGNETS.md
+CLAUDE.md
+CODEX.md
+GEMINI.md
+COPILOT.md
+.github/copilot-instructions.md
+.github/instructions/
+PLAN-REVIEW.md
 
 # Agent run logs and generated task state
-.agents/task-board.md
-.agents/task-packets/
-.agents/queue/
 docs/worker-reports/
+SESSION*.md
 
 # OS noise
 .DS_Store

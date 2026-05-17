@@ -28,13 +28,15 @@ python -m fattern estimate
 output/YYYYMMDD-HHMMSS_DXF이름/
   marker_preview.svg
   marker_report.md
+  marker_report.pdf
+  report.csv
   result.json
 ```
 
 자동화에서는 DXF 경로를 직접 줄 수 있다.
 
 ```powershell
-python -m fattern estimate input\sample.dxf --fabric-width 150 --unit cm --dxf-unit auto --grainline-status unknown --seam-allowance-included no --one-way-fabric no --rotation 0
+python -m fattern estimate input\sample.dxf --fabric-width 150 --unit cm --seam-allowance-status included --nap-direction two_way --grainline-required no --allowed-rotation 0
 ```
 
 ## 단위
@@ -45,7 +47,7 @@ python -m fattern estimate input\sample.dxf --fabric-width 150 --unit cm --dxf-u
 mm, cm, m, inch, ft, yd
 ```
 
-`dxf_unit_hint`는 보통 `auto`를 쓴다. DXF가 애매하면 직접 지정한다. 자동 추정은 의류 패턴 크기와 원단 폭을 기준으로 한 휴리스틱이다.
+고수준 `estimate` 경로는 DXF 좌표 단위를 `auto`로만 처리한다. 자동 추정은 의류 패턴 크기와 원단 폭을 기준으로 한 휴리스틱이다.
 
 ## 원단 폭
 
@@ -69,20 +71,20 @@ custom
 기본값:
 
 ```json
-"rotation_allowed_degrees": [0]
+"allowed_rotation": [0]
 ```
 
 Fattern은 식서를 함부로 돌리지 않는다. `0,180`이나 `0,90,180,270`은 사용자가 명시한 경우에만 쓴다.
 
-`grainline_status` 의미:
+`nap_direction` 의미:
 
 ```text
-present: DXF 또는 사용자가 식서 존재를 확인함
-missing: 식서 없음
-unknown: 확인 불가
+one_way: 원웨이 원단
+two_way: 양방향 배치 가능
+none/no_nap/not_one_way: 방향성 없음 또는 원웨이 아님
 ```
 
-원웨이 원단에서 `grainline_status=missing`이면 layout 단계에서 blocker로 중단한다. 식서가 없는데 회전을 허용하면 경고를 낸다.
+원웨이 원단에서 DXF piece-level 식서선을 감지하지 못하면 `extract_pattern_pieces` 직후 blocker로 중단한다. 식서가 없는데 회전을 허용하면 경고를 낸다.
 
 ## 회전
 

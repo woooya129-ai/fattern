@@ -73,6 +73,7 @@ class JobStore:
         base.mkdir(parents=True, exist_ok=True)
         self._root = base.resolve(strict=True)
         self._jobs: dict[str, JobRecord] = {}
+        self._file_job_index: dict[str, str] = {}
 
     @property
     def root(self) -> Path:
@@ -125,6 +126,7 @@ class JobStore:
         internal_path.write_bytes(data)
         canonical_path = resolve_workspace_file(record.workspace_root, internal_path, allowed_suffixes=ALLOWED_INPUT_SUFFIXES)
         record.files[file_id] = FileRecord(file_id=file_id, path=canonical_path, original_name=safe_name)
+        self._file_job_index[file_id] = record.job_id
         return file_id
 
     def register_file_text(self, job_id: object, content: str, file_name: object) -> str:
@@ -138,6 +140,23 @@ class JobStore:
             raise JobError("FILE_NOT_FOUND", "File was not found.")
         mapped_path = file_record.path if isinstance(file_record, FileRecord) else file_record
         return resolve_workspace_file(record.workspace_root, mapped_path, allowed_suffixes=ALLOWED_INPUT_SUFFIXES)
+
+    def resolve_input_file(self, file_id: object) -> tuple[JobRecord, FileRecord]:
+        safe_file_id = validate_opaque_id(file_id)
+        job_id = self._file_job_index.get(safe_file_id)
+        if job_id is None:
+            raise JobError("FILE_NOT_FOUND", "File was not found.")
+
+        record = self.get_job(job_id)
+        file_record = record.files.get(safe_file_id)
+        if file_record is None:
+            raise JobError("FILE_NOT_FOUND", "File was not found.")
+        if isinstance(file_record, Path):
+            resolved_path = resolve_workspace_file(record.workspace_root, file_record, allowed_suffixes=ALLOWED_INPUT_SUFFIXES)
+            return record, FileRecord(file_id=safe_file_id, path=resolved_path, original_name=file_record.name)
+
+        resolved_path = resolve_workspace_file(record.workspace_root, file_record.path, allowed_suffixes=ALLOWED_INPUT_SUFFIXES)
+        return record, FileRecord(file_id=file_record.file_id, path=resolved_path, original_name=file_record.original_name)
 
     def store_dxf_parse(self, job_id: object, result: DxfParseResult) -> str:
         record = self.get_job(job_id)

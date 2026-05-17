@@ -63,10 +63,19 @@ def _validate(schema: dict[str, Any], value: Any, root: dict[str, Any]) -> None:
             if field not in value:
                 raise ToolValidationError("input schema validation failed")
         properties = schema.get("properties", {})
+        property_names = schema.get("propertyNames")
+        if isinstance(property_names, dict):
+            for field in value:
+                _validate(property_names, field, root)
         if schema.get("additionalProperties") is False:
             for field in value:
                 if field not in properties:
                     raise ToolValidationError("input schema validation failed")
+        elif isinstance(schema.get("additionalProperties"), dict):
+            additional_schema = schema["additionalProperties"]
+            for field, field_value in value.items():
+                if field not in properties:
+                    _validate(additional_schema, field_value, root)
         for field, field_schema in properties.items():
             if field in value:
                 _validate(field_schema, value[field], root)

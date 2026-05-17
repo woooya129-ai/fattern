@@ -6,7 +6,43 @@ DXF 의류 패턴으로 가요척을 빠르게 추정하는 CLI/MCP 도구.
 
 Fattern은 **FAST + PATTERN = FATTERN**이라는 뜻이다.
 
+현재 버전: **0.7.0**
+
 이 저장소는 **source-available, noncommercial use only**다. 라이선스는 **PolyForm Noncommercial License 1.0.0 + 별도 Commercial License** 구조다.
+
+## 빠른 이해
+
+- Fattern은 LLM 계산기가 아니라 **DXF 기반 deterministic marker yield engine**이다.
+- 입력은 DXF 패턴과 원단 조건이고, 출력은 rough marker 추정 결과다.
+- 주요 산출물은 `result.json`, `marker_preview.svg`, `marker_report.md`, `marker_report.pdf`, `report.csv`다.
+- v0.7.0 기준 CSV/PDF report, canonical `answers.json`, 고수준 MCP tool `calculate_marker_yield`를 지원한다.
+- 생산용 확정 요척이나 상용 CAD nesting 대체품은 아니다.
+
+## 설치 방법
+
+Python **3.11 이상**이 필요하다.
+
+```powershell
+git clone <repo-url>
+cd fattern
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -e .
+```
+
+설치 확인:
+
+```powershell
+fattern --help
+fattern questionnaire
+```
+
+설치하지 않고 소스 트리에서 바로 실행하려면:
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m fattern --help
+```
 
 ## 한 줄 사용
 
@@ -19,7 +55,7 @@ python -m fattern estimate
 바로 옵션으로 실행할 수도 있다.
 
 ```powershell
-python -m fattern estimate input\sample.dxf --fabric-width 150 --unit cm --dxf-unit auto --grainline-status unknown --seam-allowance-included no --one-way-fabric no --rotation 0
+python -m fattern estimate input\sample.dxf --fabric-width 150 --unit cm --seam-allowance-status included --nap-direction two_way --grainline-required no --spacing 0.2 --allowed-rotation 0
 ```
 
 결과는 항상 `output/YYYYMMDD-HHMMSS_DXF이름/` 아래에 정리된다.
@@ -29,6 +65,8 @@ output/
   20260517-223500_Simple-T/
     marker_preview.svg
     marker_report.md
+    marker_report.pdf
+    report.csv
     result.json
 ```
 
@@ -46,14 +84,17 @@ python -m fattern questionnaire
 
 ```json
 {
+  "schema_version": "1.0",
   "fabric_width": 150,
   "unit": "cm",
-  "dxf_unit_hint": "auto",
-  "grainline_status": "unknown",
-  "seam_allowance_included": "no",
-  "one_way_fabric": "no",
-  "rotation_allowed_degrees": [0],
-  "clearance": 0.2
+  "size_ratio": {},
+  "spacing": 0.2,
+  "allowed_rotation": [0],
+  "grainline_required": false,
+  "nap_direction": "two_way",
+  "shrinkage_percent": 0,
+  "fabric_type": "unknown",
+  "seam_allowance": {"status": "included"}
 }
 ```
 
@@ -86,13 +127,16 @@ Run python -m fattern estimate using the DXF and answers.json in input/, then su
 - `dxf_file`: DXF 파일 또는 MCP file_id
 - `fabric_width`: 원단 폭
 - `unit`: 결과 단위, `mm`, `cm`, `m`, `inch`, `ft`, `yd`
-- `dxf_unit_hint`: DXF 좌표 단위, 보통 `auto`
-- `grainline_status`: 식서선 확인 여부, `present`, `missing`, `unknown`
-- `seam_allowance_included`: 시접 포함 여부
-- `seam_allowance_width`: 시접 미포함일 때 평균 시접값
-- `one_way_fabric`: 원웨이 원단 여부
-- `rotation_allowed_degrees`: 허용 회전, 기본 `[0]`
-- `clearance`: 피스 사이 간격
+- `size_ratio`: 사이즈별 수량 비율
+- `piece_quantity`: 피스별 추가 수량
+- `spacing`: 피스 사이 최소 간격
+- `allowed_rotation`: 허용 회전 각도
+- `grainline_required`: 식서선 필수 여부
+- `nap_direction`: 원단 방향성, `one_way`, `two_way`, `none`, `no_nap`, `not_one_way`
+- `shrinkage_percent`: 길이 방향 수축률
+- `fabric_type`: `woven`, `knit`, `unknown`
+- `stretch_direction`: 니트 스트레치 방향
+- `seam_allowance`: 시접 포함 여부 객체
 
 ## 원단 폭 기준
 
@@ -111,13 +155,13 @@ Run python -m fattern estimate using the DXF and answers.json in input/, then su
 
 패턴을 돌리고 싶으면 사용자가 명시적으로 `--rotation 0,180` 또는 `--rotation 0,90,180,270`을 넣어야 한다. 식서선이 없거나 확인되지 않았는데 회전을 허용하면 결과에는 경고가 붙는다.
 
-원웨이 원단에서 식서선이 `missing`이면 배치를 중단한다. 이 경우 DXF 식서 레이어를 정리하거나 `grainline_status`를 확인해야 한다.
+`nap_direction`이 `one_way`인데 DXF에서 piece-level 식서선을 감지하지 못하면 계산을 중단한다. 이 경우 DXF 식서 레이어를 정리해야 한다.
 
 자세한 배치 기준은 [docs/marker-rules.md](docs/marker-rules.md)를 봐라.
 
 ## 시접 기본값
 
-패턴에 시접이 없으면 `seam_allowance_included`를 `no`로 둔다. 그러면 평균 시접값을 rough 계산에 넣는다.
+패턴에 시접이 없으면 `seam_allowance`를 `{"status": "excluded"}`로 둔다. `fallback_width`가 없으면 선택 단위별 평균 시접값을 rough 계산에 넣는다.
 
 - `mm`: `10.0`
 - `cm`: `1.0`
@@ -130,12 +174,10 @@ Run python -m fattern estimate using the DXF and answers.json in input/, then su
 
 ## DXF 단위 자동 추정
 
-기본값은 `--dxf-unit auto`다. 의류 패턴 크기와 원단 폭을 기준으로 `mm`, `cm`, `m`, `inch`, `ft`, `yd` 후보를 비교한다.
-
-DXF가 애매하면 직접 지정해라.
+현재 `estimate`의 고수준 `calculate_marker_yield` 경로는 DXF 좌표 단위를 `auto`로만 처리한다. `--dxf-unit`은 `auto`만 허용된다.
 
 ```powershell
-python -m fattern estimate input\sample.dxf --fabric-width 150 --unit cm --dxf-unit mm --grainline-status unknown --seam-allowance-included yes --one-way-fabric no
+python -m fattern estimate input\sample.dxf --fabric-width 150 --unit cm --dxf-unit auto --seam-allowance-status included --nap-direction two_way --grainline-required no
 ```
 
 ## SVG 출력

@@ -9,6 +9,7 @@ P3 MCP wrapper and stdio
 P4 orchestration regression
 P5 SVG/report
 P6 CLI workflow
+P7 repository hygiene
 ```
 
 ## P1 Schema Tests
@@ -51,6 +52,8 @@ DXF parser
   - R12 POLYLINE rectangle returns one closed candidate
   - non-closed contour returns NON_CLOSED_CONTOUR or excluded piece
   - unsupported DXF returns UNSUPPORTED_DXF_VERSION
+  - LINE entities are separated from piece geometry for grainline/internal-line policy
+  - TEXT/MTEXT entities are treated as untrusted annotation and excluded from geometry
 
 Geometry metrics
   - rectangle bbox width and height
@@ -112,7 +115,7 @@ Workspace security
   - symlink or junction escape is rejected
 
 Wrappers
-  - get_estimation_questionnaire returns fabric_width, unit, dxf_unit_hint, grainline_status, seam allowance, one-way fabric, rotation, clearance questions
+  - get_estimation_questionnaire returns canonical answers fields: fabric_width, unit, size_ratio, spacing, allowed_rotation, grainline_required, nap_direction, shrinkage_percent, fabric_type, seam_allowance
   - create_job returns opaque job_id only
   - register_input_file accepts file_name + content_base64 and returns file_id
   - parse_dxf accepts file_id, not path
@@ -122,6 +125,7 @@ Wrappers
   - render_marker_svg returns artifact id, not absolute path
   - get_job_status does not leak another job
   - export_artifacts uses manifest allowlist
+  - calculate_marker_yield returns result JSON, SVG, CSV, Markdown, and PDF artifact IDs
 ```
 
 ## P4 Orchestration Regression
@@ -173,6 +177,10 @@ Markdown report
   - excluded pieces section exists
   - user text is escaped
   - internal absolute paths are absent
+
+PDF report
+  - marker_report.pdf has a valid PDF header
+  - PDF text is escaped before entering the PDF stream
 ```
 
 ## P6 CLI Workflow
@@ -183,14 +191,24 @@ CLI
   - python -m fattern estimate can use explicit DXF path and flags
   - python -m fattern estimate can use input/ plus answers.json
   - output directory uses YYYYMMDD-HHMMSS_DXFNAME
-  - marker_preview.svg, marker_report.md, result.json are copied to the run output directory
+  - marker_preview.svg, marker_report.md, marker_report.pdf, result.json, report.csv are copied to the run output directory
   - missing required answers return needs_clarification details
+```
+
+## P7 Repository Hygiene
+
+```text
+Repository hygiene
+  - tracked root files stay inside the explicit allowlist
+  - AI working files and generated output are not tracked
+  - .gitignore contains required local-only patterns
 ```
 
 ## Required Commands
 
 ```text
 python -m unittest tests/test_schemas.py
+python -m unittest tests.test_repository_hygiene
 python -m unittest discover -s tests
 ```
 

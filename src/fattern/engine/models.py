@@ -38,6 +38,29 @@ class PolylineCandidate:
     closed: bool
     source_entity_index: int
     vertex_count: int | None = None
+    piece_name: str | None = None
+    size: str | None = None
+    has_grainline: bool = False
+    grainline_confidence: float | None = None
+    grainline_layer: str | None = None
+    grainline_start: Point | None = None
+    grainline_end: Point | None = None
+
+
+@dataclass(frozen=True)
+class DxfLineEntity:
+    layer: str
+    start: Point
+    end: Point
+    source_entity_index: int
+
+
+@dataclass(frozen=True)
+class DxfTextEntity:
+    layer: str
+    text: str
+    insert: Point
+    source_entity_index: int
 
 
 @dataclass(frozen=True)
@@ -56,6 +79,8 @@ class DxfParseResult:
     piece_candidates: tuple[PolylineCandidate, ...]
     excluded_candidates: tuple[ExcludedCandidate, ...]
     messages: tuple[EngineMessage, ...]
+    line_entities: tuple[DxfLineEntity, ...] = ()
+    text_entities: tuple[DxfTextEntity, ...] = ()
 
     def has_blocker(self) -> bool:
         return any(message.severity == "blocker" for message in self.messages)
@@ -74,6 +99,9 @@ class PieceMetrics:
     seam_allowance_width: float = 0.0
     source_unit: str | None = None
     unit_scale: float = 1.0
+    piece_name: str | None = None
+    size: str | None = None
+    has_grainline: bool = False
 
 
 @dataclass(frozen=True)

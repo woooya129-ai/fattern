@@ -39,13 +39,16 @@ QUESTIONNAIRE_FIELDS = (
     "dxf_file",
     "fabric_width",
     "unit",
-    "dxf_unit_hint",
-    "grainline_status",
-    "seam_allowance_included",
-    "seam_allowance_width",
-    "one_way_fabric",
-    "rotation_allowed_degrees",
-    "clearance",
+    "size_ratio",
+    "piece_quantity",
+    "spacing",
+    "allowed_rotation",
+    "grainline_required",
+    "nap_direction",
+    "shrinkage_percent",
+    "fabric_type",
+    "stretch_direction",
+    "seam_allowance",
 )
 
 

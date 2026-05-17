@@ -73,6 +73,54 @@ class DxfParserTests(unittest.TestCase):
         self.assertEqual(result.messages[0].code, "NON_CLOSED_CONTOUR")
         self.assertEqual(result.messages[0].severity, "warning")
 
+    def test_semantic_line_and_text_entities_are_separated_from_piece_geometry(self) -> None:
+        result = parse_dxf_text(_semantic_dxf())
+
+        self.assertFalse(result.has_blocker())
+        self.assertEqual(result.summary.counts_by_type["LWPOLYLINE"], 1)
+        self.assertEqual(result.summary.counts_by_type["LINE"], 1)
+        self.assertEqual(result.summary.counts_by_type["TEXT"], 1)
+        self.assertEqual(result.piece_candidates[0].piece_name, "Front")
+        self.assertEqual(result.piece_candidates[0].size, "M")
+        self.assertEqual(result.line_entities[0].layer, "GRAINLINE")
+        self.assertEqual(result.text_entities[0].text, "Front label")
+        self.assertEqual(result.excluded_candidates[0].reason_code, "ANNOTATION_TEXT_IGNORED")
+        self.assertIn("ANNOTATION_TEXT_UNTRUSTED", [message.code for message in result.messages])
+
+
+def _semantic_dxf() -> str:
+    return "\n".join(
+        [
+            "0", "SECTION",
+            "2", "ENTITIES",
+            "0", "LWPOLYLINE",
+            "8", "piece=Front;size=M",
+            "90", "4",
+            "70", "1",
+            "10", "0",
+            "20", "0",
+            "10", "4",
+            "20", "0",
+            "10", "4",
+            "20", "3",
+            "10", "0",
+            "20", "3",
+            "0", "LINE",
+            "8", "GRAINLINE",
+            "10", "2",
+            "20", "0.5",
+            "11", "2",
+            "21", "2.5",
+            "0", "TEXT",
+            "8", "LABEL",
+            "10", "1",
+            "20", "1",
+            "1", "Front label",
+            "0", "ENDSEC",
+            "0", "EOF",
+        ]
+    )
+
 
 if __name__ == "__main__":
     unittest.main()

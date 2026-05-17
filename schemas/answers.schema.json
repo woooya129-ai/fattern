@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://fattern.local/schemas/answers.schema.json",
+  "title": "FatternAnswers",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "fabric_width",
+    "unit",
+    "size_ratio",
+    "spacing",
+    "allowed_rotation",
+    "grainline_required",
+    "nap_direction",
+    "shrinkage_percent",
+    "fabric_type",
+    "seam_allowance"
+  ],
+  "properties": {
+    "schema_version": {
+      "type": "string",
+      "const": "1.0"
+    },
+    "fabric_width": {
+      "type": "number",
+      "minimum": 1
+    },
+    "cuttable_width": {
+      "type": ["number", "null"],
+      "minimum": 1,
+      "default": null
+    },
+    "unit": {
+      "type": "string",
+      "enum": ["mm", "cm", "m", "inch", "ft", "yd"]
+    },
+    "size_ratio": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 40,
+        "pattern": "^[A-Za-z0-9][A-Za-z0-9 ._-]{0,39}$"
+      },
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "default": {}
+    },
+    "piece_quantity": {
+      "type": "object",
+      "propertyNames": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 40,
+        "pattern": "^(\\*|[A-Za-z0-9][A-Za-z0-9 ._-]{0,39})$"
+      },
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "default": {}
+    },
+    "spacing": {
+      "type": "number",
+      "minimum": 0,
+      "default": 0
+    },
+    "allowed_rotation": {
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "enum": [0, 90, 180, 270]
+      },
+      "minItems": 1,
+      "maxItems": 4,
+      "uniqueItems": true,
+      "default": [0]
+    },
+    "grainline_required": {
+      "type": "boolean",
+      "default": true
+    },
+    "nap_direction": {
+      "type": "string",
+      "enum": ["one_way", "two_way", "none", "no_nap", "not_one_way", "unknown"],
+      "default": "unknown"
+    },
+    "shrinkage_percent": {
+      "type": "number",
+      "minimum": 0,
+      "default": 0
+    },
+    "shrinkage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["length_percent", "width_percent"],
+      "properties": {
+        "length_percent": {
+          "type": "number",
+          "minimum": 0,
+          "default": 0
+        },
+        "width_percent": {
+          "type": "number",
+          "minimum": 0,
+          "default": 0
+        }
+      }
+    },
+    "fabric_type": {
+      "type": "string",
+      "enum": ["woven", "knit", "unknown"],
+      "default": "unknown"
+    },
+    "stretch_direction": {
+      "type": ["string", "null"],
+      "enum": ["lengthwise", "crosswise", "bias", "unknown", null],
+      "default": null
+    },
+    "seam_allowance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status"],
+      "properties": {
+        "status": {
+          "type": "string",
+          "enum": ["included", "excluded"]
+        },
+        "fallback_width": {
+          "type": ["number", "null"],
+          "minimum": 0,
+          "default": null
+        }
+      }
+    }
+  }
+}

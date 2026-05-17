@@ -13,6 +13,40 @@ OPAQUE_ID_SCHEMA = {
     "pattern": ID_PATTERN,
 }
 
+SIZE_RATIO_SCHEMA = {
+    "type": "object",
+    "propertyNames": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 40,
+        "pattern": r"^[A-Za-z0-9][A-Za-z0-9 ._-]{0,39}$",
+    },
+    "additionalProperties": {"type": "integer", "minimum": 1},
+    "default": {},
+}
+
+PIECE_QUANTITY_SCHEMA = {
+    "type": "object",
+    "propertyNames": {
+        "type": "string",
+        "minLength": 1,
+        "maxLength": 40,
+        "pattern": r"^(\*|[A-Za-z0-9][A-Za-z0-9 ._-]{0,39})$",
+    },
+    "additionalProperties": {"type": "integer", "minimum": 1},
+    "default": {},
+}
+
+SHRINKAGE_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["length_percent", "width_percent"],
+    "properties": {
+        "length_percent": {"type": "number", "minimum": 0, "default": 0},
+        "width_percent": {"type": "number", "minimum": 0, "default": 0},
+    },
+}
+
 GET_ESTIMATION_QUESTIONNAIRE_INPUT = {
     "type": "object",
     "additionalProperties": False,
@@ -115,6 +149,7 @@ ESTIMATE_MARKER_LAYOUT_INPUT = {
         "job_id": OPAQUE_ID_SCHEMA,
         "metrics_id": OPAQUE_ID_SCHEMA,
         "fabric_width": {"type": "number", "minimum": 1},
+        "cuttable_width": {"type": ["number", "null"], "minimum": 1, "default": None},
         "fabric_width_unit": {"type": "string", "enum": ["mm", "cm", "m", "inch", "ft", "yd"], "default": "cm"},
         "rotation_allowed_degrees": {
             "type": "array",
@@ -124,8 +159,16 @@ ESTIMATE_MARKER_LAYOUT_INPUT = {
             "default": [0],
         },
         "clearance": {"type": "number", "minimum": 0, "default": 0.2},
+        "spacing": {"type": ["number", "null"], "minimum": 0, "default": None},
+        "nap_direction": {
+            "type": ["string", "null"],
+            "enum": ["one_way", "two_way", "none", "no_nap", "not_one_way", "unknown", None],
+            "default": None,
+        },
         "one_way_fabric": {"type": ["boolean", "null"], "default": None},
         "grainline_status": {"type": "string", "enum": ["present", "missing", "unknown"], "default": "unknown"},
+        "grainline_required": {"type": ["boolean", "null"], "default": None},
+        "fabric_type": {"type": ["string", "null"], "enum": ["woven", "knit", "unknown", None], "default": None},
     },
 }
 
@@ -159,6 +202,66 @@ EXPORT_ARTIFACTS_INPUT = {
         "job_id": OPAQUE_ID_SCHEMA,
         "artifact_ids": {"type": "array", "items": OPAQUE_ID_SCHEMA, "minItems": 1, "maxItems": 20},
         "archive_format": {"type": "string", "enum": ["zip"], "default": "zip"},
+    },
+}
+
+CALCULATE_MARKER_YIELD_INPUT = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": [
+        "schema_version",
+        "pattern_file_id",
+        "fabric_width",
+        "unit",
+        "size_ratio",
+        "spacing",
+        "allowed_rotation",
+        "grainline_required",
+        "nap_direction",
+        "shrinkage_percent",
+        "fabric_type",
+        "seam_allowance",
+    ],
+    "properties": {
+        "schema_version": {"type": "string", "const": "1.0"},
+        "pattern_file_id": OPAQUE_ID_SCHEMA,
+        "fabric_width": {"type": "number", "minimum": 1},
+        "cuttable_width": {"type": ["number", "null"], "minimum": 1, "default": None},
+        "unit": {"type": "string", "enum": ["mm", "cm", "m", "inch", "ft", "yd"]},
+        "size_ratio": SIZE_RATIO_SCHEMA,
+        "piece_quantity": PIECE_QUANTITY_SCHEMA,
+        "spacing": {"type": "number", "minimum": 0, "default": 0},
+        "allowed_rotation": {
+            "type": "array",
+            "items": {"type": "integer", "enum": [0, 90, 180, 270]},
+            "minItems": 1,
+            "maxItems": 4,
+            "uniqueItems": True,
+            "default": [0],
+        },
+        "grainline_required": {"type": "boolean", "default": True},
+        "nap_direction": {
+            "type": "string",
+            "enum": ["one_way", "two_way", "none", "no_nap", "not_one_way", "unknown"],
+            "default": "unknown",
+        },
+        "shrinkage_percent": {"type": "number", "minimum": 0, "default": 0},
+        "shrinkage": SHRINKAGE_SCHEMA,
+        "fabric_type": {"type": "string", "enum": ["woven", "knit", "unknown"], "default": "unknown"},
+        "stretch_direction": {
+            "type": ["string", "null"],
+            "enum": ["lengthwise", "crosswise", "bias", "unknown", None],
+            "default": None,
+        },
+        "seam_allowance": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["status"],
+            "properties": {
+                "status": {"type": "string", "enum": ["included", "excluded"]},
+                "fallback_width": {"type": ["number", "null"], "minimum": 0, "default": None},
+            },
+        },
     },
 }
 
@@ -212,6 +315,11 @@ TOOL_DEFINITIONS = (
         "name": "export_artifacts",
         "description": "Package manifest-allowlisted job artifacts into a zip artifact.",
         "inputSchema": EXPORT_ARTIFACTS_INPUT,
+    },
+    {
+        "name": "calculate_marker_yield",
+        "description": "Run the DXF rough marker workflow from a registered pattern_file_id and return exportable artifacts.",
+        "inputSchema": CALCULATE_MARKER_YIELD_INPUT,
     },
 )
 

@@ -6,7 +6,43 @@ A CLI/MCP tool for fast rough marker-yield estimation from DXF garment pattern f
 
 Fattern means **FAST + PATTERN = FATTERN**.
 
+Current version: **0.7.0**
+
 This repository is **source-available, noncommercial use only** under **PolyForm Noncommercial License 1.0.0 + a separate Commercial License**.
+
+## Quick Understanding
+
+- Fattern is not an LLM calculator. It is a **DXF-based deterministic marker yield engine**.
+- Inputs are a DXF pattern and fabric conditions. Outputs are rough marker estimate artifacts.
+- Main artifacts are `result.json`, `marker_preview.svg`, `marker_report.md`, `marker_report.pdf`, and `report.csv`.
+- v0.7.0 supports CSV/PDF reports, canonical `answers.json`, and the high-level MCP tool `calculate_marker_yield`.
+- It is not a production final-yield system or a replacement for commercial CAD nesting.
+
+## Installation
+
+Python **3.11 or newer** is required.
+
+```powershell
+git clone <repo-url>
+cd fattern
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+python -m pip install -e .
+```
+
+Verify the install:
+
+```powershell
+fattern --help
+fattern questionnaire
+```
+
+To run directly from the source tree without installing:
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m fattern --help
+```
 
 ## One-Line Use
 
@@ -19,7 +55,7 @@ python -m fattern estimate
 You can also pass options directly:
 
 ```powershell
-python -m fattern estimate input\sample.dxf --fabric-width 150 --unit cm --dxf-unit auto --grainline-status unknown --seam-allowance-included no --one-way-fabric no --rotation 0
+python -m fattern estimate input\sample.dxf --fabric-width 150 --unit cm --seam-allowance-status included --nap-direction two_way --grainline-required no --spacing 0.2 --allowed-rotation 0
 ```
 
 Results are written to `output/YYYYMMDD-HHMMSS_DXFNAME/`.
@@ -29,6 +65,8 @@ output/
   20260517-223500_Simple-T/
     marker_preview.svg
     marker_report.md
+    marker_report.pdf
+    report.csv
     result.json
 ```
 
@@ -46,14 +84,17 @@ python -m fattern questionnaire
 
 ```json
 {
+  "schema_version": "1.0",
   "fabric_width": 150,
   "unit": "cm",
-  "dxf_unit_hint": "auto",
-  "grainline_status": "unknown",
-  "seam_allowance_included": "no",
-  "one_way_fabric": "no",
-  "rotation_allowed_degrees": [0],
-  "clearance": 0.2
+  "size_ratio": {},
+  "spacing": 0.2,
+  "allowed_rotation": [0],
+  "grainline_required": false,
+  "nap_direction": "two_way",
+  "shrinkage_percent": 0,
+  "fabric_type": "unknown",
+  "seam_allowance": {"status": "included"}
 }
 ```
 
@@ -86,13 +127,16 @@ Run python -m fattern estimate using the DXF and answers.json in input/, then su
 - `dxf_file`: DXF file or MCP file_id
 - `fabric_width`: fabric width
 - `unit`: output unit, `mm`, `cm`, `m`, `inch`, `ft`, `yd`
-- `dxf_unit_hint`: DXF coordinate unit, usually `auto`
-- `grainline_status`: `present`, `missing`, or `unknown`
-- `seam_allowance_included`: whether seam allowance is already included
-- `seam_allowance_width`: average seam allowance if missing
-- `one_way_fabric`: whether the fabric is directional
-- `rotation_allowed_degrees`: allowed rotations, default `[0]`
-- `clearance`: spacing between pieces
+- `size_ratio`: quantity ratio by size
+- `piece_quantity`: additional quantity by piece
+- `spacing`: minimum spacing between pieces
+- `allowed_rotation`: allowed rotations
+- `grainline_required`: whether grainline is mandatory
+- `nap_direction`: `one_way`, `two_way`, `none`, `no_nap`, or `not_one_way`
+- `shrinkage_percent`: length-direction shrinkage percent
+- `fabric_type`: `woven`, `knit`, or `unknown`
+- `stretch_direction`: knit stretch direction
+- `seam_allowance`: seam allowance status object
 
 ## Fabric Width Presets
 
@@ -111,13 +155,13 @@ Grainline is critical for garment marker planning. Fattern defaults to `0` degre
 
 If rotation is acceptable, the user must explicitly pass `--rotation 0,180` or `--rotation 0,90,180,270`. When grainline is missing or unknown and rotation is allowed, the result includes a warning.
 
-For one-way fabric, `grainline_status=missing` blocks layout. Fix the DXF grainline information or confirm the status before continuing.
+For one-way fabric, Fattern blocks calculation when piece-level grainline cannot be detected from the DXF. Fix the DXF grainline layer before continuing.
 
 See [docs/marker-rules.md](docs/marker-rules.md) for detailed marker rules.
 
 ## Seam Allowance Defaults
 
-When seam allowance is not included, set `seam_allowance_included` to `no`. Fattern applies a rough average allowance.
+When seam allowance is not included, set `seam_allowance` to `{"status": "excluded"}`. If `fallback_width` is absent, Fattern applies a rough average allowance for the selected unit.
 
 - `mm`: `10.0`
 - `cm`: `1.0`
@@ -130,12 +174,10 @@ This is a rough expansion, not an exact CAD offset-curve operation.
 
 ## DXF Unit Autoscale
 
-The default is `--dxf-unit auto`. Fattern compares candidate units against garment-pattern size and fabric-width context.
-
-If the drawing is ambiguous, pass a unit explicitly.
+The high-level `estimate` path currently uses `auto` DXF coordinate handling only. `--dxf-unit` accepts `auto` for this path.
 
 ```powershell
-python -m fattern estimate input\sample.dxf --fabric-width 150 --unit cm --dxf-unit mm --grainline-status unknown --seam-allowance-included yes --one-way-fabric no
+python -m fattern estimate input\sample.dxf --fabric-width 150 --unit cm --dxf-unit auto --seam-allowance-status included --nap-direction two_way --grainline-required no
 ```
 
 ## SVG Output

@@ -147,6 +147,111 @@ class LayoutTests(unittest.TestCase):
         self.assertAlmostEqual(rotated.placements[0].width, 3.0)
         self.assertAlmostEqual(rotated.placements[0].height, 7.0)
 
+    def test_spacing_is_applied_as_minimum_piece_gap(self) -> None:
+        metrics = MetricsResult(
+            metrics=(metric("piece_0001", 4.0, 3.0), metric("piece_0002", 2.0, 2.0)),
+            messages=(),
+        )
+
+        result = estimate_marker_layout(metrics, fabric_width=6.1, clearance=0.2, spacing=0.0)
+
+        self.assertFalse(result.has_blocker())
+        self.assertAlmostEqual(result.placements[1].x, 4.0)
+        self.assertAlmostEqual(result.placements[1].y, 0.0)
+        self.assertTrue(any(message.code == "SPACING_OVERRIDES_CLEARANCE" for message in result.messages))
+
+    def test_cuttable_width_is_prioritized_for_layout_width(self) -> None:
+        metrics = MetricsResult(
+            metrics=(metric("piece_0001", 4.0, 3.0), metric("piece_0002", 2.0, 2.0)),
+            messages=(),
+        )
+
+        result = estimate_marker_layout(metrics, fabric_width=6.2, cuttable_width=6.1)
+
+        self.assertFalse(result.has_blocker())
+        self.assertAlmostEqual(result.fabric_width, 6.1)
+        self.assertAlmostEqual(result.marker_length, 5.2)
+        self.assertTrue(any(message.code == "CUTTABLE_WIDTH_APPLIED" for message in result.messages))
+
+    def test_cuttable_width_larger_than_fabric_width_returns_blocker(self) -> None:
+        metrics = MetricsResult(metrics=(metric("piece_0001", 4.0, 3.0),), messages=())
+
+        result = estimate_marker_layout(metrics, fabric_width=6.2, cuttable_width=6.3)
+
+        self.assertTrue(result.has_blocker())
+        self.assertEqual(result.placements, ())
+        self.assertAlmostEqual(result.fabric_width, 6.2)
+        self.assertEqual(result.messages[0].code, "INVALID_CUTTABLE_WIDTH")
+
+    def test_grainline_required_blocks_missing_grainline_without_nap_direction(self) -> None:
+        metrics = MetricsResult(metrics=(metric("piece_0001", 4.0, 3.0),), messages=())
+
+        result = estimate_marker_layout(
+            metrics,
+            fabric_width=10.0,
+            grainline_status="missing",
+            grainline_required=True,
+        )
+
+        self.assertTrue(result.has_blocker())
+        self.assertEqual(result.placements, ())
+        self.assertEqual(result.messages[0].code, "MISSING_GRAINLINE_REQUIRED")
+
+    def test_woven_fabric_blocks_missing_grainline_without_nap_direction(self) -> None:
+        metrics = MetricsResult(metrics=(metric("piece_0001", 4.0, 3.0),), messages=())
+
+        result = estimate_marker_layout(
+            metrics,
+            fabric_width=10.0,
+            grainline_status="missing",
+            fabric_type="woven",
+        )
+
+        self.assertTrue(result.has_blocker())
+        self.assertEqual(result.placements, ())
+        self.assertEqual(result.messages[0].code, "MISSING_GRAINLINE_FOR_WOVEN")
+
+    def test_nap_direction_one_way_filters_180_without_grainline_blocker(self) -> None:
+        metrics = MetricsResult(metrics=(metric("piece_0001", 4.0, 3.0),), messages=())
+
+        result = estimate_marker_layout(
+            metrics,
+            fabric_width=10.0,
+            rotation_allowed_degrees=(0, 180),
+            nap_direction="one_way",
+            grainline_status="missing",
+        )
+
+        self.assertFalse(result.has_blocker())
+        self.assertEqual(result.rotation_allowed_degrees, (0,))
+        self.assertEqual(result.placements[0].rotation_degrees, 0)
+        self.assertTrue(
+            any(message.code == "NAP_DIRECTION_ONE_WAY_BLOCKED_180_ROTATION" for message in result.messages)
+        )
+        self.assertFalse(any(message.code.startswith("MISSING_GRAINLINE") for message in result.messages))
+
+    def test_one_way_fabric_requires_grainline_presence(self) -> None:
+        metrics = MetricsResult(metrics=(metric("piece_0001", 4.0, 3.0),), messages=())
+
+        result = estimate_marker_layout(
+            metrics,
+            fabric_width=10.0,
+            one_way_fabric=True,
+            grainline_status="missing",
+        )
+
+        self.assertTrue(result.has_blocker())
+        self.assertEqual(result.messages[0].code, "MISSING_GRAINLINE_ON_ONE_WAY_FABRIC")
+        self.assertEqual(result.placements, ())
+
+    def test_unsupported_nap_direction_returns_blocker(self) -> None:
+        metrics = MetricsResult(metrics=(metric("piece_0001", 4.0, 3.0),), messages=())
+
+        result = estimate_marker_layout(metrics, fabric_width=10.0, nap_direction="directional")
+
+        self.assertTrue(result.has_blocker())
+        self.assertEqual(result.messages[0].code, "UNSUPPORTED_NAP_DIRECTION")
+
     def test_overlap_validation_returns_overlap_detected(self) -> None:
         placements = (
             LayoutPlacement("piece_0001", "OUTLINE", 0.0, 0.0, 3.0, 2.0, 0),
