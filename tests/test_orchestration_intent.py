@@ -38,16 +38,27 @@ class UserIntentNormalizationTests(unittest.TestCase):
         self.assertEqual(intent["missing_fields"], [])
 
     def test_default_seam_allowance_matches_unit(self) -> None:
-        intent = normalize_user_intent(
-            {
-                "file_id": "file_uploaded",
-                "unit": "mm",
-                "fabric_width": 1500,
-                "rules": {"seam_allowance_included": False, "one_way_fabric": False},
-            }
-        )
+        expected_defaults = {
+            "mm": 12.7,
+            "cm": 1.27,
+            "m": 0.0127,
+            "inch": 0.5,
+            "ft": 1.0 / 24.0,
+            "yd": 1.0 / 72.0,
+        }
 
-        self.assertEqual(intent["rules"]["seam_allowance_width"], 10.0)
+        for unit, expected_width in expected_defaults.items():
+            with self.subTest(unit=unit):
+                intent = normalize_user_intent(
+                    {
+                        "file_id": "file_uploaded",
+                        "unit": unit,
+                        "fabric_width": 1500,
+                        "rules": {"seam_allowance_included": False, "one_way_fabric": False},
+                    }
+                )
+
+                self.assertAlmostEqual(intent["rules"]["seam_allowance_width"], expected_width)
 
     def test_missing_file_id_maps_to_dxf_file_missing_field(self) -> None:
         intent = normalize_user_intent(

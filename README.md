@@ -6,7 +6,7 @@ DXF 의류 패턴으로 가요척을 빠르게 추정하는 CLI/MCP 도구.
 
 Fattern은 **FAST + PATTERN = FATTERN**이라는 뜻이다.
 
-현재 버전: **0.7.0**
+현재 버전: **0.7.1**
 
 이 저장소는 **source-available, noncommercial use only**다. 라이선스는 **PolyForm Noncommercial License 1.0.0 + 별도 Commercial License** 구조다.
 
@@ -15,7 +15,7 @@ Fattern은 **FAST + PATTERN = FATTERN**이라는 뜻이다.
 - Fattern은 LLM 계산기가 아니라 **DXF 기반 deterministic marker yield engine**이다.
 - 입력은 DXF 패턴과 원단 조건이고, 출력은 rough marker 추정 결과다.
 - 주요 산출물은 `result.json`, `marker_preview.svg`, `marker_report.md`, `marker_report.pdf`, `report.csv`다.
-- v0.7.0 기준 CSV/PDF report, canonical `answers.json`, 고수준 MCP tool `calculate_marker_yield`를 지원한다.
+- v0.7.1 기준 CSV/PDF report, canonical `answers.json`, 고수준 MCP tool `calculate_marker_yield`, legacy DXF fallback을 지원한다.
 - 생산용 확정 요척이나 상용 CAD nesting 대체품은 아니다.
 
 ## 설치 방법
@@ -64,7 +64,7 @@ python -m fattern --help
 
 DXF 레이어가 애매하면 MCP의 `parse_dxf` 또는 `extract_pattern_pieces` 결과에서 `layer_audit`을 확인한다. 레이어별 entity 수, grainline 후보 근거, confidence, mapping status가 나온다. 숫자 레이어 `7`은 AAMA/ASTM 후보로만 표시되며, 검증된 CAD vendor mapping으로 확정하지 않는다.
 
-배치는 기존 BLF + beam search 골격을 유지한다. v0.7.0 이후에는 shelf compact 보조 step, longest-edge-down attempt, overlap geometry cache가 들어가서 작은 케이스의 빈 공간 재사용과 충돌 검사 반복 비용이 개선됐다. 그래도 상용 CAD급 최종 nesting은 아니다.
+배치는 기존 BLF + beam search 골격을 유지한다. v0.7.1 기준 shelf compact 보조 step, longest-edge-down attempt, overlap geometry cache가 들어가서 작은 케이스의 빈 공간 재사용과 충돌 검사 반복 비용이 개선됐다. 그래도 상용 CAD급 최종 nesting은 아니다.
 
 ## 한 줄 사용
 
@@ -183,14 +183,14 @@ Run python -m fattern estimate using the DXF and answers.json in input/, then su
 
 ## 시접 기본값
 
-패턴에 시접이 없으면 `seam_allowance`를 `{"status": "excluded"}`로 둔다. `fallback_width`가 없으면 선택 단위별 평균 시접값을 rough 계산에 넣는다.
+패턴에 시접이 없으면 `seam_allowance`를 `{"status": "excluded"}`로 둔다. `fallback_width`가 없으면 `1/2 inch`를 기준으로 선택 단위별 평균 시접값을 rough 계산에 넣는다.
 
-- `mm`: `10.0`
-- `cm`: `1.0`
-- `m`: `0.01`
-- `inch`: `0.375`
-- `ft`: `0.03125`
-- `yd`: `0.0104167`
+- `mm`: `12.7`
+- `cm`: `1.27`
+- `m`: `0.0127`
+- `inch`: `0.5`
+- `ft`: `0.0416667`
+- `yd`: `0.0138889`
 
 이 값은 CAD offset curve가 아니라 평균 확장 추정이다. 생산용 확정 요척으로 보면 안 된다.
 
@@ -224,7 +224,9 @@ python -m fattern mcp-stdio
 }
 ```
 
-MCP 클라이언트가 prompts를 slash UI로 노출하면 `/fattern-help`, `/fattern-estimate` 같은 도움말을 볼 수 있다. 이건 클라이언트 지원 여부에 달려 있다. 서버 쪽에서는 `prompts/list`, `prompts/get`을 지원한다.
+MCP 클라이언트가 prompts를 slash UI로 노출하면 `/`를 누른 뒤 `fattern`을 선택하거나 `/fattern`을 실행해서 시작 안내를 볼 수 있다. 서버 쪽에서는 `prompts/list`, `prompts/get`을 지원하고 `fattern`, `fattern-help`, `fattern-estimate` prompt를 제공한다. slash 노출 여부는 클라이언트 지원에 달려 있다.
+
+`/fattern` 안내는 질문지를 강제로 띄우지 않는다. DXF 등록 방식, 필요한 답변, 기본값, tool 호출 순서를 host AI에게 알려주는 MCP prompt다.
 
 MCP tool input에는 DXF 경로를 넣지 않는다. 순서는 아래처럼 간다.
 
@@ -245,7 +247,8 @@ export_artifacts
 ## 지원 범위
 
 - closed LWPOLYLINE
-- R12 `POLYLINE + VERTEX + SEQEND`
+- R12 legacy `POLYLINE + VERTEX + SEQEND`
+- 연결된 `LINE` 조각으로 만든 닫힌 외곽선
 - bbox baseline + polygon-aware compact rough marker
 - shelf compact, longest-edge-down attempt, overlap geometry cache
 - `layer_audit` 기반 DXF 레이어 점검

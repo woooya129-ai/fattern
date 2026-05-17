@@ -6,7 +6,7 @@ A CLI/MCP tool for fast rough marker-yield estimation from DXF garment pattern f
 
 Fattern means **FAST + PATTERN = FATTERN**.
 
-Current version: **0.7.0**
+Current version: **0.7.1**
 
 This repository is **source-available, noncommercial use only** under **PolyForm Noncommercial License 1.0.0 + a separate Commercial License**.
 
@@ -15,7 +15,7 @@ This repository is **source-available, noncommercial use only** under **PolyForm
 - Fattern is not an LLM calculator. It is a **DXF-based deterministic marker yield engine**.
 - Inputs are a DXF pattern and fabric conditions. Outputs are rough marker estimate artifacts.
 - Main artifacts are `result.json`, `marker_preview.svg`, `marker_report.md`, `marker_report.pdf`, and `report.csv`.
-- v0.7.0 supports CSV/PDF reports, canonical `answers.json`, and the high-level MCP tool `calculate_marker_yield`.
+- v0.7.1 supports CSV/PDF reports, canonical `answers.json`, the high-level MCP tool `calculate_marker_yield`, and legacy DXF fallbacks.
 - It is not a production final-yield system or a replacement for commercial CAD nesting.
 
 ## Installation
@@ -64,7 +64,7 @@ Read the outputs in this order:
 
 When DXF layers are unclear, inspect `layer_audit` from `parse_dxf` or `extract_pattern_pieces`. It shows entity counts by layer, grainline candidate source, confidence, and mapping status. Numeric layer `7` remains an AAMA/ASTM candidate only; Fattern does not treat it as a verified CAD vendor mapping.
 
-Layout still uses the existing BLF + beam-search structure. Recent updates add shelf compaction, a longest-edge-down attempt, and overlap geometry caching for better small-case packing and fewer repeated collision calculations. This is still not commercial CAD-grade final nesting.
+Layout still uses the existing BLF + beam-search structure. v0.7.1 adds shelf compaction, a longest-edge-down attempt, and overlap geometry caching for better small-case packing and fewer repeated collision calculations. This is still not commercial CAD-grade final nesting.
 
 ## One-Line Use
 
@@ -183,14 +183,14 @@ See [docs/marker-rules.md](docs/marker-rules.md) for detailed marker rules.
 
 ## Seam Allowance Defaults
 
-When seam allowance is not included, set `seam_allowance` to `{"status": "excluded"}`. If `fallback_width` is absent, Fattern applies a rough average allowance for the selected unit.
+When seam allowance is not included, set `seam_allowance` to `{"status": "excluded"}`. If `fallback_width` is absent, Fattern applies a rough average allowance based on `1/2 inch` in the selected unit.
 
-- `mm`: `10.0`
-- `cm`: `1.0`
-- `m`: `0.01`
-- `inch`: `0.375`
-- `ft`: `0.03125`
-- `yd`: `0.0104167`
+- `mm`: `12.7`
+- `cm`: `1.27`
+- `m`: `0.0127`
+- `inch`: `0.5`
+- `ft`: `0.0416667`
+- `yd`: `0.0138889`
 
 This is a rough expansion, not an exact CAD offset-curve operation.
 
@@ -224,7 +224,9 @@ Example config:
 }
 ```
 
-If an MCP client exposes prompts in a slash UI, `/fattern-help` and `/fattern-estimate` can appear there. This depends on client support. The server supports `prompts/list` and `prompts/get`.
+If an MCP client exposes prompts in a slash UI, press `/` and choose `fattern`, or run `/fattern`, to show the start guide. The server supports `prompts/list` and `prompts/get`, and provides `fattern`, `fattern-help`, and `fattern-estimate` prompts. Slash visibility depends on client support.
+
+`/fattern` does not force a questionnaire popup. It is an MCP prompt that tells the host AI how to register DXF content, collect required answers, apply defaults, and call tools in order.
 
 Do not pass DXF filesystem paths to MCP tools. The safe order is:
 
@@ -246,6 +248,7 @@ Stop the chain if a tool returns a `severity=blocker` error.
 
 - Closed LWPOLYLINE
 - R12 `POLYLINE + VERTEX + SEQEND`
+- Closed outlines stitched from connected `LINE` segments
 - Bbox baseline + polygon-aware compact rough marker layout
 - Shelf compaction, longest-edge-down attempt, overlap geometry cache
 - DXF layer checks through `layer_audit`

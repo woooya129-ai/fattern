@@ -112,8 +112,13 @@ class McpStdioTransportTests(unittest.TestCase):
         list_response = server.handle_message(request(1, "prompts/list", {}))
         prompt_names = {prompt["name"] for prompt in list_response["result"]["prompts"]}
 
+        self.assertIn("fattern", prompt_names)
         self.assertIn("fattern-help", prompt_names)
-        get_response = server.handle_message(request(2, "prompts/get", {"name": "fattern-estimate", "arguments": {}}))
+        guide_response = server.handle_message(request(2, "prompts/get", {"name": "fattern", "arguments": {}}))
+        guide_text = guide_response["result"]["messages"][0]["content"]["text"]
+        self.assertIn("1/2 inch", guide_text)
+        self.assertIn("register_input_file", guide_text)
+        get_response = server.handle_message(request(3, "prompts/get", {"name": "fattern-estimate", "arguments": {}}))
         text = get_response["result"]["messages"][0]["content"]["text"]
         self.assertIn("Default rotation is 0 only", text)
 

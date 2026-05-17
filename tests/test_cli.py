@@ -191,8 +191,8 @@ class FatternCliTests(unittest.TestCase):
         self.assertEqual(code, 0, stderr.getvalue())
         response = json.loads(stdout.getvalue())
         self.assertIn("SEAM_ALLOWANCE_ESTIMATED", [warning["code"] for warning in response["warnings"]])
-        self.assertEqual(response["layout"]["marker_length"], 5.0)
-        self.assertAlmostEqual(response["layout"]["efficiency"], 0.6)
+        self.assertAlmostEqual(response["layout"]["marker_length"], 5.54)
+        self.assertAlmostEqual(response["layout"]["efficiency"], 0.654)
 
 
 if __name__ == "__main__":

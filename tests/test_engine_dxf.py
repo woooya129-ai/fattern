@@ -25,11 +25,12 @@ class DxfParserTests(unittest.TestCase):
         self.assertTrue(result.has_blocker())
         self.assertEqual(result.messages[0].code, "PARSE_FAILED")
 
-    def test_unsupported_version_returns_blocker(self) -> None:
+    def test_unverified_version_returns_warning_not_blocker(self) -> None:
         result = parse_dxf_file(FIXTURE_DIR / "unsupported_version.dxf")
 
-        self.assertTrue(result.has_blocker())
-        self.assertEqual(result.messages[0].code, "UNSUPPORTED_DXF_VERSION")
+        self.assertFalse(result.has_blocker())
+        self.assertEqual(result.messages[0].code, "UNVERIFIED_DXF_VERSION")
+        self.assertEqual(result.messages[0].severity, "warning")
         self.assertEqual(result.acad_version, "AC1006")
 
     def test_lwpolyline_rectangle_returns_closed_candidate(self) -> None:
@@ -61,6 +62,18 @@ class DxfParserTests(unittest.TestCase):
         self.assertEqual(candidate.layer, "OUTLINE")
         self.assertTrue(candidate.closed)
         self.assertEqual(candidate.points, ((0.0, 0.0), (4.0, 0.0), (4.0, 3.0), (0.0, 3.0)))
+
+    def test_connected_line_rectangle_returns_closed_candidate(self) -> None:
+        result = parse_dxf_text(_line_loop_dxf())
+
+        self.assertFalse(result.has_blocker())
+        self.assertEqual(result.summary.counts_by_type["LINE"], 4)
+        self.assertEqual(len(result.piece_candidates), 1)
+        candidate = result.piece_candidates[0]
+        self.assertEqual(candidate.piece_id, "piece_0001")
+        self.assertEqual(candidate.layer, "OUTLINE")
+        self.assertEqual(candidate.points, ((0.0, 0.0), (4.0, 0.0), (4.0, 3.0), (0.0, 3.0)))
+        self.assertIn("LINE_LOOP_CONTOUR_CONNECTED", [message.code for message in result.messages])
 
     def test_non_closed_lwpolyline_is_excluded(self) -> None:
         result = parse_dxf_file(FIXTURE_DIR / "open_lwpolyline.dxf")
@@ -116,6 +129,46 @@ def _semantic_dxf() -> str:
             "10", "1",
             "20", "1",
             "1", "Front label",
+            "0", "ENDSEC",
+            "0", "EOF",
+        ]
+    )
+
+
+def _line_loop_dxf() -> str:
+    return "\n".join(
+        [
+            "0", "SECTION",
+            "2", "HEADER",
+            "9", "$ACADVER",
+            "1", "AC1009",
+            "0", "ENDSEC",
+            "0", "SECTION",
+            "2", "ENTITIES",
+            "0", "LINE",
+            "8", "OUTLINE",
+            "10", "0",
+            "20", "0",
+            "11", "4",
+            "21", "0",
+            "0", "LINE",
+            "8", "OUTLINE",
+            "10", "4",
+            "20", "0",
+            "11", "4",
+            "21", "3",
+            "0", "LINE",
+            "8", "OUTLINE",
+            "10", "4",
+            "20", "3",
+            "11", "0",
+            "21", "3",
+            "0", "LINE",
+            "8", "OUTLINE",
+            "10", "0",
+            "20", "3",
+            "11", "0",
+            "21", "0",
             "0", "ENDSEC",
             "0", "EOF",
         ]

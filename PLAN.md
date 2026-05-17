@@ -12,17 +12,18 @@ Engine은 계산 주체다. DXF/AAMA/ASTM 파싱, polygon 추출, grainline, sea
 
 ## 현재 완료 상태
 
-- 릴리스 표기: `pyproject.toml`, `README.md`, `README.en.md` 기준 `0.7.0`으로 정리 완료.
+- 릴리스 표기: `pyproject.toml`, `README.md`, `README.en.md` 기준 `0.7.1`로 정리 완료.
 - 빠른 이해와 설치 문서: README 양쪽에 빠른 이해, 설치 방법, 실행 예시, 산출물 목록 반영 완료.
 - 고수준 경로: `calculate_marker_yield`, CLI `estimate`, canonical `answers.json` 연동 완료.
 - 조건 엔진: `cuttable_width`, `size_ratio`, `piece_quantity`, `spacing`, `nap_direction`, `fabric_type`, `shrinkage`, `stretch_direction`, `seam_allowance` 정책 반영 완료.
 - blocker 정책: cuttable width 초과, one-way 180 회전, woven/grainline required/one-way grainline missing, invalid nap, invalid shrinkage, invalid seam fallback 차단 완료.
 - DXF 의미 분리: `LINE`은 grainline 후보 또는 internal line으로 분리하고, `TEXT`/`MTEXT`는 annotation으로 제외 완료.
 - DXF layer audit: `parse_dxf`와 `extract_pattern_pieces` 응답에 layer별 entity count, grainline candidate source, confidence, mapping status 노출 완료.
+- DXF 수용성: ACAD version 미검증값은 blocker 대신 warning으로 처리하고, legacy `POLYLINE + VERTEX + SEQEND`와 연결된 `LINE` 폐곡선 후보를 piece로 수용 완료.
 - Nesting 개선: shelf compact 보조 step, longest-edge-down attempt, overlap geometry cache 반영 완료.
 - 리포트 산출물: `result.json`, `marker_preview.svg`, `marker_report.md`, `marker_report.pdf`, `report.csv`, 별도 zip export 경로 완료.
 - 계약 정리: LLM-facing schema, MCP tool schema, README 예시, 테스트 계약 동기화 완료.
-- 검수 기준: `python -m unittest discover -s tests` 기준 162 tests OK, 1 skipped.
+- 검수 기준: `python -m unittest discover -s tests` 기준 164 tests OK, 1 skipped.
 
 ## 역할 경계
 
@@ -302,6 +303,7 @@ excluded
 v0.5 시접 범위는 아래로 한정한다.
 
 - piece 단위 uniform fallback width까지만 자동 적용한다. (완료)
+- 기본 fallback 기준은 `1/2 inch`다. 단위별 기본값은 `mm 12.7`, `cm 1.27`, `m 0.0127`, `inch 0.5`, `ft 0.0416667`, `yd 0.0138889`로 적용한다. (완료)
 - 변동 시접, curve offset, notch 보존, mitre 처리는 v0.5 범위 밖이다.
 
 ## v0.6.0 목표: DXF 의미 인식 강화
@@ -379,6 +381,26 @@ PDF report는 단일 페이지 텍스트 PDF artifact로 생성한다. JSON, CSV
 - 단일 페이지 PDF report 생성 완료.
 - `export_artifacts` 별도 호출로 zip 생성 완료.
 - schema, README 예시, MCP tool 계약, 테스트 동기화 완료.
+
+## v0.7.1 목표: DXF 입력 수용성 확대
+
+v0.7.1은 Simple-T처럼 구형 DXF exporter에서 나온 파일을 더 많이 받아들이는 단계다. 목표는 DXF 전체 CAD 호환을 선언하는 것이 아니라, blocker를 줄이고 deterministic fallback으로 읽을 수 있는 외곽선을 늘리는 것이다.
+
+### v0.7.1 완료 항목
+
+- 릴리스 표기 `0.7.1` 반영 완료.
+- `$ACADVER`가 검증 목록 밖이어도 `UNVERIFIED_DXF_VERSION` warning으로 낮추고 파싱을 계속한다. (완료)
+- AC1009/R12 legacy `POLYLINE + VERTEX + SEQEND` 폐곡선은 piece 후보로 처리한다. (완료)
+- 같은 layer의 연결된 `LINE` 조각이 닫힌 loop를 만들면 `LINE_LOOP_CONTOUR_CONNECTED` warning과 함께 piece 후보로 처리한다. (완료)
+- `connect_lines`, `mixed_entities` extraction mode는 `EXTRACTION_MODE_FALLBACK` warning과 함께 deterministic closed-outline fallback을 사용한다. (완료)
+- `extract_pattern_pieces` 설명을 closed LWPOLYLINE 한정에서 closed DXF outline candidates로 수정했다. (완료)
+- README How to use와 지원 범위에 legacy DXF fallback 설명을 반영했다. (완료)
+
+### v0.7.1 한계
+
+- ARC, CIRCLE, ELLIPSE, SPLINE, HATCH를 고정밀 outline으로 변환하는 것은 아직 범위 밖이다.
+- CAD vendor별 layer convention 자동 확정은 하지 않는다. `layer_audit`와 warning으로 근거만 노출한다.
+- 연결된 `LINE` loop는 같은 layer 안에서 endpoint가 맞는 단순 폐곡선만 조립한다.
 
 ### CSV 필드
 
@@ -530,9 +552,11 @@ v0.7.0까지는 nesting 알고리즘만 더 파는 것보다 **고수준 tool + 
 현재 제품 계약은 Codex, Claude Code, CLI, MCP 모두에서 아래 흐름으로 고정한다.
 
 ```text
-질문지 답변 + DXF
+slash 안내 또는 질문지 답변 + DXF
   -> calculate_marker_yield
   -> deterministic engine
   -> JSON/SVG/CSV/Markdown/PDF output
   -> optional export_artifacts zip
 ```
+
+MCP에서는 자동 팝업 질문지를 강제하지 않는다. 서버는 `prompts/list`/`prompts/get`으로 `/fattern`, `/fattern-help`, `/fattern-estimate`에 해당하는 start guide를 제공하고, host AI가 그 안내에 따라 누락값만 묻는다. (완료)

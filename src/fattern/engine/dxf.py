@@ -1,4 +1,4 @@
-"""Minimal DXF parser for closed apparel outline input."""
+"""DXF parser for rough apparel outline input."""
 
 from __future__ import annotations
 
@@ -17,7 +17,7 @@ from .models import (
     PolylineCandidate,
 )
 
-SUPPORTED_ACAD_VERSIONS = {
+KNOWN_ACAD_VERSIONS = {
     "AC1009",
     "AC1012",
     "AC1014",
@@ -59,23 +59,17 @@ def parse_dxf_text(text: str) -> DxfParseResult:
     try:
         pairs = _read_group_pairs(text)
         acad_version = _find_acad_version(pairs)
-        if acad_version is not None and acad_version not in SUPPORTED_ACAD_VERSIONS:
-            return DxfParseResult(
-                acad_version=acad_version,
-                summary=_empty_summary(),
-                piece_candidates=(),
-                excluded_candidates=(),
-                messages=(
-                    EngineMessage(
-                        code="UNSUPPORTED_DXF_VERSION",
-                        message=f"DXF version {acad_version} is not supported by the MVP parser.",
-                        severity="blocker",
-                    ),
-                ),
-            )
-
         entities = _collect_entities(pairs)
         summary, candidates, excluded, line_entities, text_entities, messages = _summarize_entities(entities)
+        if acad_version is not None and acad_version not in KNOWN_ACAD_VERSIONS:
+            messages.insert(
+                0,
+                EngineMessage(
+                    code="UNVERIFIED_DXF_VERSION",
+                    message=f"DXF version {acad_version} is not in the verified parser matrix; parsed with fallback rules.",
+                    severity="warning",
+                ),
+            )
         return DxfParseResult(
             acad_version=acad_version,
             summary=summary,
@@ -359,14 +353,15 @@ def _summarize_entities(
     open_count = 0
     closed_polyline_count = 0
     open_polyline_count = 0
+    next_piece_number = 1
 
     for source_index, entity in enumerate(entities, start=1):
         counts_by_type[entity.entity_type] = counts_by_type.get(entity.entity_type, 0) + 1
 
         if entity.entity_type == "LWPOLYLINE":
-            parsed = _parse_lwpolyline(entity, source_index, len(candidates) + 1)
+            parsed = _parse_lwpolyline(entity, source_index, next_piece_number)
         elif entity.entity_type == "POLYLINE":
-            parsed = _parse_polyline(entity, source_index, len(candidates) + 1)
+            parsed = _parse_polyline(entity, source_index, next_piece_number)
         elif entity.entity_type == "LINE":
             parsed_line = _parse_line_entity(entity, source_index)
             if parsed_line is not None:
@@ -399,7 +394,7 @@ def _summarize_entities(
                     entity_type=entity.entity_type,
                     layer=_layer_from_pairs(entity.pairs),
                     reason_code="UNSUPPORTED_ENTITY",
-                    message=f"{entity.entity_type} is outside the closed LWPOLYLINE MVP scope.",
+                    message=f"{entity.entity_type} is outside the current outline parser scope.",
                     source_entity_index=source_index,
                 )
             )
@@ -412,12 +407,17 @@ def _summarize_entities(
             else:
                 closed_polyline_count += 1
             candidates.append(parsed.candidate)
+            next_piece_number += 1
         elif parsed.excluded is not None:
             if entity.entity_type == "LWPOLYLINE":
                 open_count += 1
             else:
                 open_polyline_count += 1
             excluded.append(parsed.excluded)
+
+    line_loop_candidates, line_loop_messages = _line_loop_candidates(line_entities, next_piece_number)
+    candidates.extend(line_loop_candidates)
+    messages.extend(line_loop_messages)
 
     supported_types = {"LWPOLYLINE", "POLYLINE", "LINE", "TEXT", "MTEXT"}
     unsupported_types = tuple(sorted(entity_type for entity_type in counts_by_type if entity_type not in supported_types))
@@ -605,6 +605,88 @@ def _parse_line_entity(entity: _DxfEntity, source_index: int) -> DxfLineEntity |
     if x1 is None or y1 is None or x2 is None or y2 is None:
         return None
     return DxfLineEntity(layer=layer, start=(x1, y1), end=(x2, y2), source_entity_index=source_index)
+
+
+def _line_loop_candidates(
+    lines: tuple[DxfLineEntity, ...],
+    start_piece_number: int,
+) -> tuple[list[PolylineCandidate], tuple[EngineMessage, ...]]:
+    candidates: list[PolylineCandidate] = []
+    messages: list[EngineMessage] = []
+    used_indexes: set[int] = set()
+    by_layer: dict[str, list[DxfLineEntity]] = {}
+    for line in lines:
+        by_layer.setdefault(line.layer, []).append(line)
+
+    next_piece_number = start_piece_number
+    for layer, layer_lines in sorted(by_layer.items()):
+        unused = [line for line in layer_lines if line.source_entity_index not in used_indexes]
+        while unused:
+            loop = _consume_line_loop(unused)
+            if loop is None:
+                break
+            loop_lines, points = loop
+            for line in loop_lines:
+                used_indexes.add(line.source_entity_index)
+            unused = [line for line in unused if line.source_entity_index not in used_indexes]
+            piece_name, size = _piece_metadata_from_layer(layer)
+            candidates.append(
+                PolylineCandidate(
+                    piece_id=f"piece_{next_piece_number:04d}",
+                    layer=layer,
+                    points=normalize_ring(points),
+                    closed=True,
+                    source_entity_index=loop_lines[0].source_entity_index,
+                    vertex_count=len(points),
+                    piece_name=piece_name,
+                    size=size,
+                )
+            )
+            next_piece_number += 1
+
+    if candidates:
+        messages.append(
+            EngineMessage(
+                code="LINE_LOOP_CONTOUR_CONNECTED",
+                message=f"{len(candidates)} closed contour(s) were built from connected LINE entities.",
+                severity="warning",
+            )
+        )
+    return candidates, tuple(messages)
+
+
+def _consume_line_loop(lines: list[DxfLineEntity]) -> tuple[list[DxfLineEntity], tuple[Point, ...]] | None:
+    for start_index, start_line in enumerate(lines):
+        remaining = [line for index, line in enumerate(lines) if index != start_index]
+        loop_lines = [start_line]
+        points = [start_line.start, start_line.end]
+        current = start_line.end
+
+        while remaining:
+            match_index, match, reverse = _find_connected_line(remaining, current)
+            if match is None:
+                break
+            remaining.pop(match_index)
+            loop_lines.append(match)
+            current = match.start if reverse else match.end
+            if points_equal(current, points[0]):
+                if len(points) >= 3:
+                    return loop_lines, tuple(points)
+                break
+            points.append(current)
+    return None
+
+
+def _find_connected_line(
+    lines: list[DxfLineEntity],
+    point: Point,
+) -> tuple[int, DxfLineEntity | None, bool]:
+    for index, line in enumerate(lines):
+        if points_equal(line.start, point):
+            return index, line, False
+        if points_equal(line.end, point):
+            return index, line, True
+    return -1, None, False
 
 
 def _parse_text_entity(entity: _DxfEntity, source_index: int) -> DxfTextEntity | None:

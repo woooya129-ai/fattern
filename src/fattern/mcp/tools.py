@@ -130,11 +130,18 @@ class McpToolRegistry:
 
     def _extract_pattern_pieces(self, arguments: dict[str, Any]) -> ToolResponse:
         job_id = arguments["job_id"]
-        if arguments["extraction_mode"] != "closed_polylines_only":
-            return _error_response("UNSUPPORTED_EXTRACTION_MODE", "Extraction mode is outside the MVP scope.")
+        extraction_mode = arguments["extraction_mode"]
 
         parse_result = self.store.get_dxf_parse(job_id, arguments["dxf_parse_id"])
         warnings, errors = _split_messages(parse_result.messages)
+        if extraction_mode != "closed_polylines_only":
+            warnings.append(
+                _message(
+                    "EXTRACTION_MODE_FALLBACK",
+                    f"{extraction_mode} uses the deterministic closed-outline fallback parser in v0.7.1.",
+                    "warning",
+                )
+            )
         if errors:
             return {
                 "job_id": job_id,

@@ -288,7 +288,7 @@ TOOL_DEFINITIONS = (
     },
     {
         "name": "extract_pattern_pieces",
-        "description": "Create a piece set from parsed closed LWPOLYLINE candidates.",
+        "description": "Create a piece set from parsed closed DXF outline candidates.",
         "inputSchema": EXTRACT_PATTERN_PIECES_INPUT,
     },
     {

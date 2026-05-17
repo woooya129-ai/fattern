@@ -151,6 +151,7 @@ def _initialize_result(params: dict[str, Any]) -> dict[str, Any]:
         },
         "instructions": (
             "Use Fattern tools for DXF rough marker estimation. "
+            "If the client exposes MCP prompts through slash UI, use /fattern for the start guide. "
             "Do not provide path inputs; register DXF content with register_input_file first."
         ),
     }
@@ -186,7 +187,7 @@ def _package_version() -> str:
     try:
         return version("fattern")
     except PackageNotFoundError:
-        return "0.7.0"
+        return "0.7.1"
 
 
 if __name__ == "__main__":

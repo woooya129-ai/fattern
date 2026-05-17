@@ -16,12 +16,12 @@ from .models import EngineMessage, MetricsResult, PieceMetrics, PolylineCandidat
 
 
 DEFAULT_SEAM_ALLOWANCE_BY_UNIT = {
-    "mm": 10.0,
-    "cm": 1.0,
-    "m": 0.01,
-    "inch": 0.375,
-    "ft": 0.03125,
-    "yd": 0.010416666666666666,
+    "mm": 12.7,
+    "cm": 1.27,
+    "m": 0.0127,
+    "inch": 0.5,
+    "ft": 1.0 / 24.0,
+    "yd": 1.0 / 72.0,
 }
 CM_PER_UNIT = {
     "mm": 0.1,

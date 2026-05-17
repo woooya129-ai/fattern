@@ -287,7 +287,7 @@ def _question_for_field(field: str) -> dict[str, Any]:
         },
         "seam_allowance_width": {
             "question": "시접이 없다면 평균 시접값을 쓸까?",
-            "allowed_answers": ["auto: mm 10 / cm 1.0 / m 0.01 / inch 0.375 / ft 0.03125 / yd 0.0104167", "number", "skip"],
+            "allowed_answers": ["auto: mm 12.7 / cm 1.27 / m 0.0127 / inch 0.5 / ft 0.0416667 / yd 0.0138889", "number", "skip"],
         },
         "one_way_fabric": {
             "question": "원웨이 원단이야?",
