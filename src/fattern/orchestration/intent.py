@@ -16,15 +16,16 @@ from typing import Any
 
 from fattern.engine.metrics import default_seam_allowance_width
 from fattern.mcp.validation import ToolValidationError, validate_input
-from fattern.schemas import DEFAULT_CLEARANCE_CM, DEFAULT_ROTATION_ALLOWED_DEGREES, ID_PATTERN
+from fattern.schemas import DEFAULT_CLEARANCE_CM, DEFAULT_ROTATION_ALLOWED_DEGREES, ID_PATTERN, SUPPORTED_UNITS
 
 from .fabric_presets import QUESTIONNAIRE_FIELDS, fabric_width_allowed_answers
 
 SCHEMA_VERSION = "1.0"
 VALID_INTENTS = {"estimate_yield", "parse_only", "render_preview", "explain_result", "ask_clarification"}
-VALID_UNITS = {"mm", "cm", "inch"}
+VALID_UNITS = set(SUPPORTED_UNITS)
 VALID_DXF_UNIT_HINTS = {"auto", *VALID_UNITS}
 VALID_ROTATIONS = {0, 90, 180, 270}
+VALID_GRAINLINE_STATUS = {"present", "missing", "unknown"}
 
 
 class UserIntentValidationError(ValueError):
@@ -141,6 +142,9 @@ def _normalize_rules(source: dict[str, Any], unit: str | None) -> dict[str, Any]
     seam_allowance_included = _normalize_optional_bool(rules_source.get("seam_allowance_included"))
     return {
         "grainline_required": _normalize_bool(rules_source.get("grainline_required"), default=True),
+        "grainline_status": _normalize_grainline_status(
+            rules_source.get("grainline_status", source.get("grainline_status"))
+        ),
         "rotation_allowed_degrees": _normalize_rotations(rules_source.get("rotation_allowed_degrees")),
         "seam_allowance_included": seam_allowance_included,
         "seam_allowance_width": _normalize_seam_allowance_width(
@@ -215,11 +219,15 @@ def _question_for_field(field: str) -> dict[str, Any]:
         },
         "unit": {
             "question": "결과와 원단 폭에 사용할 단위를 선택해줘.",
-            "allowed_answers": ["mm", "cm", "inch"],
+            "allowed_answers": list(SUPPORTED_UNITS),
         },
         "dxf_unit_hint": {
             "question": "DXF 좌표 단위는 자동 추정할까, 직접 지정할까?",
-            "allowed_answers": ["auto", "mm", "cm", "inch"],
+            "allowed_answers": ["auto", *SUPPORTED_UNITS],
+        },
+        "grainline_status": {
+            "question": "DXF에서 식서선이 확인돼?",
+            "allowed_answers": ["present", "missing", "unknown"],
         },
         "piece_quantity": {
             "question": "피스별 수량을 알려줘.",
@@ -243,7 +251,7 @@ def _question_for_field(field: str) -> dict[str, Any]:
         },
         "seam_allowance_width": {
             "question": "시접이 없다면 평균 시접값을 쓸까?",
-            "allowed_answers": ["auto: mm 10 / cm 1.0 / inch 0.375", "number", "skip"],
+            "allowed_answers": ["auto: mm 10 / cm 1.0 / m 0.01 / inch 0.375 / ft 0.03125 / yd 0.0104167", "number", "skip"],
         },
         "one_way_fabric": {
             "question": "원웨이 원단이야?",
@@ -285,6 +293,14 @@ def _normalize_rotations(value: Any) -> list[int]:
         if isinstance(item, int) and not isinstance(item, bool) and item in VALID_ROTATIONS and item not in rotations:
             rotations.append(item)
     return rotations or list(DEFAULT_ROTATION_ALLOWED_DEGREES)
+
+
+def _normalize_grainline_status(value: Any) -> str:
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in VALID_GRAINLINE_STATUS:
+            return normalized
+    return "unknown"
 
 
 def _normalize_clearance(value: Any) -> float:

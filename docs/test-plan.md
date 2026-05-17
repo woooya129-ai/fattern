@@ -5,26 +5,28 @@
 ```text
 P1 schema contract
 P2 engine core
-P3 MCP wrapper
+P3 MCP wrapper and stdio
 P4 orchestration regression
 P5 SVG/report
+P6 CLI workflow
 ```
 
 ## P1 Schema Tests
 
 ```text
 test_schema_files_are_valid_json_objects
-  - 모든 schemas/*.schema.json이 JSON object인지 확인
+  - schemas/*.schema.json이 JSON object인지 확인
   - $schema가 draft 2020-12인지 확인
 
 test_llm_facing_schemas_are_closed
-  - UserIntent와 Clarification이 additionalProperties false인지 확인
+  - UserIntent와 ClarificationRequest가 additionalProperties false인지 확인
   - schema_version const 1.0 확인
 
 test_policy_defaults_are_locked
   - unit default cm
   - dxf_unit_hint default auto
-  - rotation default 0, 180
+  - grainline_status default unknown
+  - rotation default [0]
   - clearance default 0.2
   - seam_allowance_included default null
   - seam_allowance_width default null
@@ -36,7 +38,7 @@ test_opaque_id_pattern_blocks_paths
   - C:/outside 차단
 
 test_mcp_tool_contracts_are_closed
-  - 정의된 input schema의 additionalProperties false 확인
+  - 정의된 input schema가 additionalProperties false인지 확인
 ```
 
 ## P2 Engine Tests
@@ -55,7 +57,8 @@ Geometry metrics
   - rectangle area
   - triangle area
   - perimeter
-  - auto DXF unit scales mm coordinates to requested output unit
+  - auto DXF unit scales coordinates to requested output unit
+  - mm, cm, m, inch, ft, yd unit candidates are accepted
   - average seam allowance expands bbox, area, and perimeter
   - average seam allowance emits SEAM_ALLOWANCE_ESTIMATED warning
   - self-intersection returns SELF_INTERSECTION blocker
@@ -65,16 +68,14 @@ Layout
   - two pieces fit within fabric width
   - fabric width overflow moves to next row
   - compact layout reuses gaps above shorter pieces
-  - compact layout tries larger-piece ordering to reduce marker length
-  - layout candidate search evaluates edge-aligned and 1x/2x clearance-contact positions
+  - layout tries larger and harder piece ordering
   - detailed search is compared against bbox baseline and cannot return a worse marker length
   - local compaction pass reinserts pieces into lower valid positions
-  - polygon collision checks use edge bounding-box pruning before exact segment tests
-  - polygon-aware layout nests pieces into concave gaps when outlines do not overlap
+  - polygon collision checks use edge bbox pruning before exact segment tests
+  - polygon-aware layout nests pieces into available outline gaps when valid
   - rotation not allowed is respected
-  - clearance 0.2cm is applied
-  - marker_length is deterministic
-  - efficiency is deterministic
+  - clearance is applied
+  - marker_length and efficiency are deterministic
   - overlap returns OVERLAP_DETECTED
 ```
 
@@ -87,8 +88,12 @@ Tool discovery
   - each tool has inputSchema
   - schema names match queue contract
 
+Prompt discovery
+  - prompts/list exposes fattern-help and fattern-estimate
+  - prompts/get returns workflow help
+
 Transport
-  - stdio initialize returns tools capability
+  - stdio initialize returns tools and prompts capabilities
   - stdio tools/list returns tool definitions
   - stdio tools/call wraps structuredContent and isError
   - stdout contains only JSON-RPC messages
@@ -107,13 +112,13 @@ Workspace security
   - symlink or junction escape is rejected
 
 Wrappers
-  - get_estimation_questionnaire returns fabric_width, dxf_unit_hint, seam allowance, one-way fabric, rotation, clearance questions
+  - get_estimation_questionnaire returns fabric_width, unit, dxf_unit_hint, grainline_status, seam allowance, one-way fabric, rotation, clearance questions
   - create_job returns opaque job_id only
   - register_input_file accepts file_name + content_base64 and returns file_id
   - parse_dxf accepts file_id, not path
   - extract_pattern_pieces returns piece_set_id
   - calculate_piece_metrics returns metrics_id and metrics
-  - estimate_marker_layout returns layout_id and validity
+  - estimate_marker_layout returns layout_id, grainline_status, one_way_fabric, and validity
   - render_marker_svg returns artifact id, not absolute path
   - get_job_status does not leak another job
   - export_artifacts uses manifest allowlist
@@ -131,8 +136,10 @@ Tool chain
   - create_job -> register_input_file -> parse_dxf -> extract_pattern_pieces -> calculate_piece_metrics -> estimate_marker_layout -> render_marker_svg
   - calculate_piece_metrics receives dxf_unit_hint=auto and fabric width context
   - calculate_piece_metrics receives seam_allowance_width when seam_allowance_included=false
+  - estimate_marker_layout receives explicit grainline_status when user provided it
   - blocker after parse_dxf stops chain
   - blocker after extract_pattern_pieces stops chain
+  - blocker after missing grainline on one-way fabric stops at layout
   - SVG_RENDER_FAILED warning still returns JSON result
 
 Hallucination guard
@@ -147,11 +154,13 @@ Hallucination guard
 
 ```text
 SVG
-  - viewBox ratio uses fabric_width and marker_length
+  - viewBox includes fabric area and side information panel
   - fabric boundary rect exists
   - piece polygon outline count matches placements when outline points are available
   - renderer falls back to bbox rectangles when outline points are unavailable
   - piece label count matches placements
+  - fabric width, marker length, grainline status, and rotation text are present
+  - grainline direction line and arrow are present
   - missing grainline warning has data-warning
   - script is absent
   - foreignObject is absent
@@ -159,11 +168,23 @@ SVG
 
 Markdown report
   - numbers match result JSON
-  - CLI writes result.json with the public response
+  - grainline_status, one_way_fabric, and rotation_allowed_degrees are present
   - warning section exists
   - excluded pieces section exists
   - user text is escaped
   - internal absolute paths are absent
+```
+
+## P6 CLI Workflow
+
+```text
+CLI
+  - python -m fattern questionnaire returns valid JSON
+  - python -m fattern estimate can use explicit DXF path and flags
+  - python -m fattern estimate can use input/ plus answers.json
+  - output directory uses YYYYMMDD-HHMMSS_DXFNAME
+  - marker_preview.svg, marker_report.md, result.json are copied to the run output directory
+  - missing required answers return needs_clarification details
 ```
 
 ## Required Commands
@@ -173,8 +194,4 @@ python -m unittest tests/test_schemas.py
 python -m unittest discover -s tests
 ```
 
-`pytest`는 현재 환경에 없으므로 선택 명령이다.
-
-```text
-pytest
-```
+`pytest`는 현재 필수 명령이 아니다.

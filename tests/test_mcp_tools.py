@@ -70,6 +70,7 @@ class McpToolTests(unittest.TestCase):
         fields = [question["field"] for question in response["questions"]]
         self.assertIn("fabric_width", fields)
         self.assertIn("dxf_unit_hint", fields)
+        self.assertIn("grainline_status", fields)
         self.assertIn("seam_allowance_width", fields)
         self.assertGreaterEqual(len(response["fabric_width_presets"]), 5)
 

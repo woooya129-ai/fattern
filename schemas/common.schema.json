@@ -7,11 +7,11 @@
   "$defs": {
     "unit": {
       "type": "string",
-      "enum": ["mm", "cm", "inch"]
+      "enum": ["mm", "cm", "m", "inch", "ft", "yd"]
     },
     "nullable_unit": {
       "type": ["string", "null"],
-      "enum": ["mm", "cm", "inch", null]
+      "enum": ["mm", "cm", "m", "inch", "ft", "yd", null]
     },
     "severity": {
       "type": "string",

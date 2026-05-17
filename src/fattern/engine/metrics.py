@@ -18,12 +18,18 @@ from .models import EngineMessage, MetricsResult, PieceMetrics, PolylineCandidat
 DEFAULT_SEAM_ALLOWANCE_BY_UNIT = {
     "mm": 10.0,
     "cm": 1.0,
+    "m": 0.01,
     "inch": 0.375,
+    "ft": 0.03125,
+    "yd": 0.010416666666666666,
 }
 CM_PER_UNIT = {
     "mm": 0.1,
     "cm": 1.0,
+    "m": 100.0,
     "inch": 2.54,
+    "ft": 30.48,
+    "yd": 91.44,
 }
 
 
@@ -217,9 +223,11 @@ def _infer_apparel_dxf_unit(
         return target_unit
 
     fabric_cm = _to_cm(fabric_width, fabric_width_unit or target_unit)
+    if fabric_cm is None:
+        return target_unit
     best_unit = target_unit
     best_score = float("inf")
-    for source_unit in ("mm", "cm", "inch"):
+    for source_unit in ("mm", "cm", "m", "inch", "ft", "yd"):
         major_cm = max_dimension * CM_PER_UNIT[source_unit]
         width_cm = max_width * CM_PER_UNIT[source_unit]
         score = _apparel_unit_score(major_cm, width_cm, fabric_cm)

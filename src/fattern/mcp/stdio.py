@@ -78,6 +78,21 @@ class FatternStdioMcpServer:
             if not isinstance(name, str) or not isinstance(arguments, dict):
                 raise InvalidParams
             return _tool_call_result(self.server.tools_call(name, arguments))
+        if method == "prompts/list":
+            if params is not None and not isinstance(params, dict):
+                raise InvalidParams
+            return self.server.prompts_list()
+        if method == "prompts/get":
+            if not isinstance(params, dict):
+                raise InvalidParams
+            name = params.get("name")
+            arguments = params.get("arguments", {})
+            if not isinstance(name, str) or not isinstance(arguments, dict):
+                raise InvalidParams
+            try:
+                return self.server.prompts_get(name, arguments)
+            except KeyError as exc:
+                raise InvalidParams from exc
         raise MethodNotFound
 
 
@@ -128,7 +143,7 @@ def _initialize_result(params: dict[str, Any]) -> dict[str, Any]:
     protocol_version = requested_version if requested_version in SUPPORTED_PROTOCOL_VERSIONS else DEFAULT_PROTOCOL_VERSION
     return {
         "protocolVersion": protocol_version,
-        "capabilities": {"tools": {"listChanged": False}},
+        "capabilities": {"tools": {"listChanged": False}, "prompts": {"listChanged": False}},
         "serverInfo": {
             "name": "fattern",
             "title": "Fattern",
@@ -171,7 +186,7 @@ def _package_version() -> str:
     try:
         return version("fattern")
     except PackageNotFoundError:
-        return "0.1.0"
+        return "0.3.0"
 
 
 if __name__ == "__main__":

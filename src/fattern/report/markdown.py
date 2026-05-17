@@ -40,6 +40,9 @@ def render_marker_report(
         f"- efficiency: {_fmt(result.efficiency)}",
         f"- total_piece_area: {_fmt(result.total_piece_area)} {escape_markdown(result.unit)}^2",
         f"- clearance: {_fmt(result.clearance)} {escape_markdown(result.unit)}",
+        f"- grainline_status: {escape_markdown(result.grainline_status)}",
+        f"- one_way_fabric: {_optional_bool(result.one_way_fabric)}",
+        f"- rotation_allowed_degrees: {escape_markdown(','.join(str(value) for value in result.rotation_allowed_degrees))}",
         f"- no_overlap: {_bool(result.no_overlap)}",
         f"- within_fabric_width: {_bool(result.within_fabric_width)}",
         "",
@@ -126,6 +129,12 @@ def _excluded_layer(item: ExcludedReportItem) -> str:
 
 def _bool(value: bool) -> str:
     return "true" if value else "false"
+
+
+def _optional_bool(value: bool | None) -> str:
+    if value is None:
+        return "unknown"
+    return _bool(value)
 
 
 def _fmt(value: float) -> str:

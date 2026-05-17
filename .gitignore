@@ -18,7 +18,10 @@ venv/
 env/
 
 # Local CLI and job outputs
+input/
+output/
 fattern-output/
+output-test*/
 result.json
 marker_preview.svg
 marker_report.md

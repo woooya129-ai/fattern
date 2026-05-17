@@ -6,6 +6,7 @@ import re
 from base64 import b64decode
 from binascii import Error as Base64DecodeError
 from copy import deepcopy
+from dataclasses import replace
 from typing import Any, Callable
 
 from fattern.engine import (
@@ -197,6 +198,8 @@ class McpToolRegistry:
             }
 
         metrics = self.store.get_metrics(job_id, arguments["metrics_id"])
+        grainline_status = arguments.get("grainline_status", "unknown")
+        one_way_fabric = arguments.get("one_way_fabric")
         result = run_estimate_marker_layout(
             metrics,
             fabric_width=arguments["fabric_width"],
@@ -204,6 +207,8 @@ class McpToolRegistry:
             rotation_allowed_degrees=arguments["rotation_allowed_degrees"],
             clearance=arguments["clearance"],
         )
+        result = replace(result, grainline_status=grainline_status, one_way_fabric=one_way_fabric)
+        result = replace(result, messages=(*result.messages, *_rotation_policy_messages(result)))
         warnings, errors = _split_messages(result.messages)
         response = _layout_response(job_id, result, warnings, errors)
         if errors:
@@ -353,6 +358,8 @@ def _layout_response(
         "unit": result.unit,
         "total_piece_area": result.total_piece_area,
         "rotation_allowed_degrees": list(result.rotation_allowed_degrees),
+        "grainline_status": result.grainline_status,
+        "one_way_fabric": result.one_way_fabric,
         "layout_summary": [_placement_summary(placement) for placement in result.placements],
         "validity": {
             "within_fabric_width": result.within_fabric_width,
@@ -377,6 +384,20 @@ def _placement_summary(placement: Any) -> dict[str, Any]:
         "height": placement.height,
         "rotation_degrees": placement.rotation_degrees,
     }
+
+
+def _rotation_policy_messages(result: LayoutResult) -> tuple[EngineMessage, ...]:
+    if result.grainline_status == "present":
+        return ()
+    if all(rotation == 0 for rotation in result.rotation_allowed_degrees):
+        return ()
+    return (
+        EngineMessage(
+            code="ROTATION_WITHOUT_GRAINLINE",
+            message="Rotation was allowed even though grainline was not detected; verify this before production use.",
+            severity="warning",
+        ),
+    )
 
 
 def _job_stage(record: Any) -> str:

@@ -40,6 +40,7 @@ QUESTIONNAIRE_FIELDS = (
     "fabric_width",
     "unit",
     "dxf_unit_hint",
+    "grainline_status",
     "seam_allowance_included",
     "seam_allowance_width",
     "one_way_fabric",

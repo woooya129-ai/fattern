@@ -138,7 +138,7 @@
         },
         "unit_hint": {
           "type": ["string", "null"],
-          "enum": ["auto", "mm", "cm", "inch", null],
+          "enum": ["auto", "mm", "cm", "m", "inch", "ft", "yd", null],
           "default": "auto"
         },
         "layer_profile": {
@@ -203,12 +203,12 @@
         },
         "unit": {
           "type": "string",
-          "enum": ["mm", "cm", "inch"],
+          "enum": ["mm", "cm", "m", "inch", "ft", "yd"],
           "default": "cm"
         },
         "dxf_unit_hint": {
           "type": "string",
-          "enum": ["auto", "mm", "cm", "inch"],
+          "enum": ["auto", "mm", "cm", "m", "inch", "ft", "yd"],
           "default": "auto"
         },
         "fabric_width": {
@@ -218,7 +218,7 @@
         },
         "fabric_width_unit": {
           "type": ["string", "null"],
-          "enum": ["mm", "cm", "inch", null],
+          "enum": ["mm", "cm", "m", "inch", "ft", "yd", null],
           "default": null
         },
         "curve_flattening_tolerance": {
@@ -262,7 +262,7 @@
         },
         "fabric_width_unit": {
           "type": "string",
-          "enum": ["mm", "cm", "inch"],
+          "enum": ["mm", "cm", "m", "inch", "ft", "yd"],
           "default": "cm"
         },
         "rotation_allowed_degrees": {
@@ -273,7 +273,7 @@
           },
           "minItems": 1,
           "uniqueItems": true,
-          "default": [0, 180]
+          "default": [0]
         },
         "clearance": {
           "type": "number",

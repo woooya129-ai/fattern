@@ -79,7 +79,7 @@ class SvgRendererTests(unittest.TestCase):
         svg = render_marker_svg(layout_result())
         root = ElementTree.fromstring(svg)
 
-        self.assertEqual(root.attrib["viewBox"], "0 0 6.2 3")
+        self.assertEqual(root.attrib["viewBox"], "0 0 10.05 3")
         self.assertEqual(root.attrib["preserveAspectRatio"], "xMidYMid meet")
         boundary = root.find(".//{http://www.w3.org/2000/svg}rect[@class='fabric-boundary']")
         self.assertIsNotNone(boundary)
@@ -91,6 +91,10 @@ class SvgRendererTests(unittest.TestCase):
         self.assertEqual(pieces[0].attrib["transform"], "translate(0 0)")
         self.assertEqual(pieces[1].attrib["transform"], "translate(4.2 0)")
         self.assertEqual(pieces[1].attrib["data-rotation"], "180")
+        info = root.find(".//{http://www.w3.org/2000/svg}g[@class='marker-info']")
+        self.assertIsNotNone(info)
+        self.assertIn("fabric width: 6.2 cm", svg)
+        self.assertIn("grainline: unknown", svg)
 
     def test_renders_original_piece_outline_when_available(self) -> None:
         svg = render_marker_svg(outlined_layout_result())

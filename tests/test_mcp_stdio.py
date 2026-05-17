@@ -51,7 +51,10 @@ class McpStdioTransportTests(unittest.TestCase):
         self.assertEqual(completed.stderr, "")
         responses = [json.loads(line) for line in completed.stdout.splitlines()]
         self.assertEqual([response["id"] for response in responses], [1, 2, 3])
-        self.assertEqual(responses[0]["result"]["capabilities"], {"tools": {"listChanged": False}})
+        self.assertEqual(
+            responses[0]["result"]["capabilities"],
+            {"tools": {"listChanged": False}, "prompts": {"listChanged": False}},
+        )
         tool_names = {tool["name"] for tool in responses[1]["result"]["tools"]}
         self.assertIn("register_input_file", tool_names)
         self.assertIn("parse_dxf", tool_names)
@@ -102,6 +105,16 @@ class McpStdioTransportTests(unittest.TestCase):
         response = FatternStdioMcpServer().handle_message(request(1, "unknown/method", {}))
 
         self.assertEqual(response["error"]["code"], -32601)
+
+    def test_stdio_dispatcher_exposes_slash_prompt_help(self) -> None:
+        server = FatternStdioMcpServer()
+        list_response = server.handle_message(request(1, "prompts/list", {}))
+        prompt_names = {prompt["name"] for prompt in list_response["result"]["prompts"]}
+
+        self.assertIn("fattern-help", prompt_names)
+        get_response = server.handle_message(request(2, "prompts/get", {"name": "fattern-estimate", "arguments": {}}))
+        text = get_response["result"]["messages"][0]["content"]["text"]
+        self.assertIn("Default rotation is 0 only", text)
 
 
 if __name__ == "__main__":

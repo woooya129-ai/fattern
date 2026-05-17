@@ -38,7 +38,8 @@ class SchemaContractTests(unittest.TestCase):
         self.assertEqual(schema["properties"]["unit"]["default"], "cm")
         self.assertEqual(schema["properties"]["dxf_unit_hint"]["default"], "auto")
         rules = schema["properties"]["rules"]["properties"]
-        self.assertEqual(rules["rotation_allowed_degrees"]["default"], [0, 180])
+        self.assertEqual(rules["grainline_status"]["default"], "unknown")
+        self.assertEqual(rules["rotation_allowed_degrees"]["default"], [0])
         self.assertEqual(rules["clearance"]["default"], 0.2)
         self.assertIsNone(rules["seam_allowance_included"]["default"])
         self.assertIsNone(rules["seam_allowance_width"]["default"])
@@ -78,7 +79,7 @@ class SchemaContractTests(unittest.TestCase):
         self.assertEqual(metrics_input["dxf_unit_hint"]["default"], "auto")
         self.assertEqual(metrics_input["seam_allowance_width"]["default"], 0)
         self.assertEqual(layout_input["fabric_width_unit"]["default"], "cm")
-        self.assertEqual(layout_input["rotation_allowed_degrees"]["default"], [0, 180])
+        self.assertEqual(layout_input["rotation_allowed_degrees"]["default"], [0])
         self.assertEqual(layout_input["clearance"]["default"], 0.2)
         self.assertEqual(layout_input["grainline_status"]["enum"], ["present", "missing", "unknown"])
 

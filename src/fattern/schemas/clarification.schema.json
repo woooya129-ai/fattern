@@ -23,6 +23,7 @@
               "fabric_width",
               "unit",
               "dxf_unit_hint",
+              "grainline_status",
               "piece_quantity",
               "grainline_rule",
               "rotation_rule",

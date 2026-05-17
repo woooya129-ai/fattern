@@ -51,12 +51,43 @@ class FatternCliTests(unittest.TestCase):
         self.assertEqual(response["status"], "completed")
         self.assertEqual(response["layout"]["marker_length"], 3.0)
         self.assertEqual(response["layout"]["efficiency"], 0.4)
-        self.assertTrue((output_dir / "marker_preview.svg").is_file())
-        self.assertTrue((output_dir / "marker_report.md").is_file())
-        self.assertTrue((output_dir / "result.json").is_file())
-        self.assertIn("- marker_length: 3 cm", (output_dir / "marker_report.md").read_text(encoding="utf-8"))
-        self.assertEqual(json.loads((output_dir / "result.json").read_text(encoding="utf-8"))["status"], "completed")
+        run_dir = Path(response["output_dir"])
+        self.assertEqual(run_dir.parent, output_dir)
+        self.assertTrue((run_dir / "marker_preview.svg").is_file())
+        self.assertTrue((run_dir / "marker_report.md").is_file())
+        self.assertTrue((run_dir / "result.json").is_file())
+        self.assertIn("rectangle_lwpolyline", run_dir.name)
+        self.assertIn("- marker_length: 3 cm", (run_dir / "marker_report.md").read_text(encoding="utf-8"))
+        self.assertEqual(json.loads((run_dir / "result.json").read_text(encoding="utf-8"))["status"], "completed")
         self.assertNotIn("fattern-jobs", stdout.getvalue())
+
+    def test_estimate_can_use_input_directory_and_answers_json(self) -> None:
+        input_dir = self.temp_dir / "input"
+        input_dir.mkdir()
+        shutil.copyfile(FIXTURE_DIR / "rectangle_lwpolyline.dxf", input_dir / "sample.dxf")
+        (input_dir / "answers.json").write_text(
+            json.dumps(
+                {
+                    "fabric_width": 10,
+                    "unit": "cm",
+                    "seam_allowance_included": "yes",
+                    "one_way_fabric": "no",
+                }
+            ),
+            encoding="utf-8",
+        )
+        output_dir = self.temp_dir / "output"
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+
+        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+            code = main(["estimate", "--input-dir", str(input_dir), "--out", str(output_dir)])
+
+        self.assertEqual(code, 0, stderr.getvalue())
+        response = json.loads(stdout.getvalue())
+        run_dir = Path(response["output_dir"])
+        self.assertTrue((run_dir / "result.json").is_file())
+        self.assertIn("sample", run_dir.name)
 
     def test_one_way_fabric_without_grainline_returns_blocker(self) -> None:
         stdout = io.StringIO()

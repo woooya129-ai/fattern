@@ -6,6 +6,7 @@ from .contracts import (
     DEFAULT_UNIT,
     ID_PATTERN,
     RECOMMENDED_YIELD_CEIL_UNIT_CM,
+    SUPPORTED_UNITS,
 )
 
 __all__ = [
@@ -14,5 +15,5 @@ __all__ = [
     "DEFAULT_UNIT",
     "ID_PATTERN",
     "RECOMMENDED_YIELD_CEIL_UNIT_CM",
+    "SUPPORTED_UNITS",
 ]
-

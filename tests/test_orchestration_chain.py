@@ -24,7 +24,7 @@ from fattern.orchestration.intent import normalize_user_intent
 FIXTURE_DIR = ROOT / "tests" / "fixtures"
 
 
-def intent(*, fabric_width: float = 10.0, one_way_fabric: bool = False) -> dict:
+def intent(*, fabric_width: float = 10.0, one_way_fabric: bool = False, grainline_status: str = "unknown") -> dict:
     return normalize_user_intent(
         {
             "dxf_file": "sample.dxf",
@@ -33,6 +33,7 @@ def intent(*, fabric_width: float = 10.0, one_way_fabric: bool = False) -> dict:
             "rules": {
                 "seam_allowance_included": True,
                 "one_way_fabric": one_way_fabric,
+                "grainline_status": grainline_status,
                 "rotation_allowed_degrees": [0, 180],
                 "clearance": 0.2,
             },
@@ -184,6 +185,16 @@ class OrchestrationChainTests(unittest.TestCase):
         self.assertEqual(result["errors"][0]["code"], "MISSING_GRAINLINE_ON_ONE_WAY_FABRIC")
         self.assertEqual(status["object_counts"]["layouts"], 0)
         self.assertNotIn("svg_artifact_id", result)
+
+    def test_explicit_grainline_status_is_passed_to_layout(self) -> None:
+        result = self._run(
+            FIXTURE_DIR / "rectangle_lwpolyline.dxf",
+            user_intent=intent(one_way_fabric=True, grainline_status="present"),
+        )
+
+        self.assertEqual(result["status"], "completed")
+        self.assertEqual(result["layout"]["grainline_status"], "present")
+        self.assertIs(result["layout"]["one_way_fabric"], True)
 
     def test_missing_fields_do_not_start_tool_chain(self) -> None:
         missing = normalize_user_intent({"dxf_file": "sample.dxf"})

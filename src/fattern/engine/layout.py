@@ -339,9 +339,19 @@ def _metric_orders(metrics: tuple[PieceMetrics, ...]) -> tuple[tuple[PieceMetric
     add(indexed)
     add(tuple(sorted(indexed, key=lambda item: (-item[1].area, -max(item[1].bbox.width, item[1].bbox.height), item[0]))))
     add(tuple(sorted(indexed, key=lambda item: (-max(item[1].bbox.width, item[1].bbox.height), -item[1].area, item[0]))))
+    add(tuple(sorted(indexed, key=lambda item: (-_packing_difficulty(item[1]), item[0]))))
     add(tuple(sorted(indexed, key=lambda item: (-item[1].bbox.height, -item[1].bbox.width, item[0]))))
     add(tuple(sorted(indexed, key=lambda item: (-item[1].bbox.width, -item[1].bbox.height, item[0]))))
     return tuple(ordered)
+
+
+def _packing_difficulty(metric: PieceMetrics) -> float:
+    major = max(metric.bbox.width, metric.bbox.height)
+    minor = max(min(metric.bbox.width, metric.bbox.height), EPSILON)
+    aspect = major / minor
+    area = max(metric.area, EPSILON)
+    outline_complexity = metric.perimeter * major / area
+    return metric.area * (1.0 + aspect * 0.15 + outline_complexity * 0.05)
 
 
 def _metric_orders_for_layout(metrics: tuple[PieceMetrics, ...]) -> tuple[tuple[PieceMetrics, ...], ...]:

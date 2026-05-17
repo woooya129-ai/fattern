@@ -204,7 +204,7 @@ def execute_marker_estimation(
             "rotation_allowed_degrees": list(user_intent["rules"]["rotation_allowed_degrees"]),
             "clearance": user_intent["rules"]["clearance"],
             "one_way_fabric": user_intent["rules"]["one_way_fabric"],
-            "grainline_status": _grainline_status(extract_response),
+            "grainline_status": _grainline_status(extract_response, user_intent),
         },
     )
     if _blocked(layout_response):
@@ -351,7 +351,12 @@ def _finalize(state: dict[str, Any]) -> dict[str, Any]:
     return result
 
 
-def _grainline_status(extract_response: ToolResponse) -> str:
+def _grainline_status(extract_response: ToolResponse, user_intent: Mapping[str, Any]) -> str:
+    rules = user_intent.get("rules", {})
+    if isinstance(rules, Mapping):
+        explicit = rules.get("grainline_status")
+        if explicit in {"present", "missing"}:
+            return str(explicit)
     pieces = extract_response.get("piece_summary", [])
     if pieces and all(piece.get("has_grainline") is True for piece in pieces):
         return "present"
@@ -388,6 +393,8 @@ def _public_layout(response: ToolResponse) -> dict[str, Any]:
         "unit": response["unit"],
         "total_piece_area": response["total_piece_area"],
         "rotation_allowed_degrees": list(response["rotation_allowed_degrees"]),
+        "grainline_status": response.get("grainline_status", "unknown"),
+        "one_way_fabric": response.get("one_way_fabric"),
         "layout_summary": response["layout_summary"],
         "validity": response["validity"],
     }
@@ -408,6 +415,8 @@ def _validate_layout_echo(chain_result: Mapping[str, Any], layout_result: Layout
         "unit": layout_result.unit,
         "total_piece_area": layout_result.total_piece_area,
         "rotation_allowed_degrees": list(layout_result.rotation_allowed_degrees),
+        "grainline_status": layout_result.grainline_status,
+        "one_way_fabric": layout_result.one_way_fabric,
         "validity": {
             "within_fabric_width": layout_result.within_fabric_width,
             "no_overlap": layout_result.no_overlap,

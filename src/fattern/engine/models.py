@@ -139,6 +139,8 @@ class LayoutResult:
     overlaps: tuple[LayoutOverlap, ...] = ()
     total_piece_area: float = 0.0
     rotation_allowed_degrees: tuple[int, ...] = ()
+    grainline_status: str = "unknown"
+    one_way_fabric: bool | None = None
 
     def has_blocker(self) -> bool:
         return any(message.severity == "blocker" for message in self.messages)
