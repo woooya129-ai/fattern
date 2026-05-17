@@ -34,7 +34,13 @@ def _build_parser() -> argparse.ArgumentParser:
     estimate = subparsers.add_parser("estimate", help="Estimate rough marker yield from a DXF file.")
     estimate.add_argument("dxf_file", type=Path, help="Input DXF file.")
     estimate.add_argument("--fabric-width", type=float, required=True, help="Fabric width in the selected unit.")
-    estimate.add_argument("--unit", choices=("mm", "cm", "inch"), required=True, help="DXF and fabric width unit.")
+    estimate.add_argument("--unit", choices=("mm", "cm", "inch"), required=True, help="Output and fabric width unit.")
+    estimate.add_argument(
+        "--dxf-unit",
+        choices=("auto", "mm", "cm", "inch"),
+        default="auto",
+        help="DXF coordinate unit hint. Default: auto.",
+    )
     estimate.add_argument(
         "--seam-allowance-included",
         choices=("yes", "no"),
@@ -55,7 +61,7 @@ def _build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Average seam allowance in the selected unit when seam allowance is not included.",
     )
-    estimate.add_argument("--out", type=Path, default=Path("fattern-output"), help="Output directory.")
+    estimate.add_argument("--out", type=Path, default=Path("output"), help="Output directory. Default: output.")
 
     subparsers.add_parser("mcp-stdio", help="Run the MCP server over stdio.")
     return parser
@@ -83,6 +89,7 @@ def _estimate(args: argparse.Namespace) -> int:
         {
             "dxf_file": dxf_path.name,
             "unit": args.unit,
+            "dxf_unit_hint": args.dxf_unit,
             "fabric_width": args.fabric_width,
             "rules": {
                 "seam_allowance_included": _yes_no(args.seam_allowance_included),
@@ -112,6 +119,9 @@ def _estimate(args: argparse.Namespace) -> int:
     written = _copy_artifacts(store, result, output_dir)
     response = _public_result(result)
     response["artifacts"] = {name: str(path) for name, path in written.items()}
+    result_path = output_dir / "result.json"
+    response["artifacts"]["result"] = str(result_path)
+    result_path.write_text(json.dumps(response, ensure_ascii=False, indent=2, sort_keys=True), encoding="utf-8")
     print(json.dumps(response, ensure_ascii=False, sort_keys=True))
     return 0
 
@@ -139,6 +149,10 @@ def _public_result(result: dict) -> dict:
     }
     if "layout" in result:
         public["layout"] = result["layout"]
+    if "dxf_unit" in result:
+        public["dxf_unit"] = result["dxf_unit"]
+    if "unit_scale" in result:
+        public["unit_scale"] = result["unit_scale"]
     return public
 
 

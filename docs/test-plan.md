@@ -23,6 +23,7 @@ test_llm_facing_schemas_are_closed
 
 test_policy_defaults_are_locked
   - unit default cm
+  - dxf_unit_hint default auto
   - rotation default 0, 180
   - clearance default 0.2
   - seam_allowance_included default null
@@ -54,6 +55,7 @@ Geometry metrics
   - rectangle area
   - triangle area
   - perimeter
+  - auto DXF unit scales mm coordinates to requested output unit
   - average seam allowance expands bbox, area, and perimeter
   - average seam allowance emits SEAM_ALLOWANCE_ESTIMATED warning
   - self-intersection returns SELF_INTERSECTION blocker
@@ -81,6 +83,7 @@ Layout
 ```text
 Tool discovery
   - tools/list exposes expected tools
+  - get_estimation_questionnaire exposes setup questions and fabric width presets
   - each tool has inputSchema
   - schema names match queue contract
 
@@ -104,6 +107,7 @@ Workspace security
   - symlink or junction escape is rejected
 
 Wrappers
+  - get_estimation_questionnaire returns fabric_width, dxf_unit_hint, seam allowance, one-way fabric, rotation, clearance questions
   - create_job returns opaque job_id only
   - register_input_file accepts file_name + content_base64 and returns file_id
   - parse_dxf accepts file_id, not path
@@ -125,6 +129,7 @@ Missing input
 
 Tool chain
   - create_job -> register_input_file -> parse_dxf -> extract_pattern_pieces -> calculate_piece_metrics -> estimate_marker_layout -> render_marker_svg
+  - calculate_piece_metrics receives dxf_unit_hint=auto and fabric width context
   - calculate_piece_metrics receives seam_allowance_width when seam_allowance_included=false
   - blocker after parse_dxf stops chain
   - blocker after extract_pattern_pieces stops chain
@@ -154,6 +159,7 @@ SVG
 
 Markdown report
   - numbers match result JSON
+  - CLI writes result.json with the public response
   - warning section exists
   - excluded pieces section exists
   - user text is escaped

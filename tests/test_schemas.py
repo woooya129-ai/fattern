@@ -36,6 +36,7 @@ class SchemaContractTests(unittest.TestCase):
     def test_policy_defaults_are_locked_in_user_intent(self) -> None:
         schema = load_schema("user-intent.schema.json")
         self.assertEqual(schema["properties"]["unit"]["default"], "cm")
+        self.assertEqual(schema["properties"]["dxf_unit_hint"]["default"], "auto")
         rules = schema["properties"]["rules"]["properties"]
         self.assertEqual(rules["rotation_allowed_degrees"]["default"], [0, 180])
         self.assertEqual(rules["clearance"]["default"], 0.2)
@@ -57,6 +58,7 @@ class SchemaContractTests(unittest.TestCase):
         defs = schema["$defs"]
         for name in [
             "create_job_input",
+            "get_estimation_questionnaire_input",
             "register_input_file_input",
             "id_only_input",
             "parse_dxf_input",
@@ -73,6 +75,7 @@ class SchemaContractTests(unittest.TestCase):
         schema = load_schema("mcp-tools.schema.json")
         metrics_input = schema["$defs"]["calculate_piece_metrics_input"]["properties"]
         layout_input = schema["$defs"]["estimate_marker_layout_input"]["properties"]
+        self.assertEqual(metrics_input["dxf_unit_hint"]["default"], "auto")
         self.assertEqual(metrics_input["seam_allowance_width"]["default"], 0)
         self.assertEqual(layout_input["fabric_width_unit"]["default"], "cm")
         self.assertEqual(layout_input["rotation_allowed_degrees"]["default"], [0, 180])

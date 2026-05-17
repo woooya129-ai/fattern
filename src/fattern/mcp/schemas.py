@@ -13,6 +13,15 @@ OPAQUE_ID_SCHEMA = {
     "pattern": ID_PATTERN,
 }
 
+GET_ESTIMATION_QUESTIONNAIRE_INPUT = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["schema_version"],
+    "properties": {
+        "schema_version": {"type": "string", "const": "1.0"},
+    },
+}
+
 CREATE_JOB_INPUT = {
     "type": "object",
     "additionalProperties": False,
@@ -49,7 +58,7 @@ PARSE_DXF_INPUT = {
         "schema_version": {"type": "string", "const": "1.0"},
         "job_id": OPAQUE_ID_SCHEMA,
         "file_id": OPAQUE_ID_SCHEMA,
-        "unit_hint": {"type": ["string", "null"], "enum": ["mm", "cm", "inch", None], "default": "cm"},
+        "unit_hint": {"type": ["string", "null"], "enum": ["auto", "mm", "cm", "inch", None], "default": "auto"},
         "layer_profile": {"type": ["string", "null"], "maxLength": 80, "default": None},
     },
 }
@@ -81,6 +90,9 @@ CALCULATE_PIECE_METRICS_INPUT = {
         "job_id": OPAQUE_ID_SCHEMA,
         "piece_set_id": OPAQUE_ID_SCHEMA,
         "unit": {"type": "string", "enum": ["mm", "cm", "inch"], "default": "cm"},
+        "dxf_unit_hint": {"type": "string", "enum": ["auto", "mm", "cm", "inch"], "default": "auto"},
+        "fabric_width": {"type": ["number", "null"], "minimum": 1, "default": None},
+        "fabric_width_unit": {"type": ["string", "null"], "enum": ["mm", "cm", "inch", None], "default": None},
         "curve_flattening_tolerance": {"type": "number", "minimum": 0.01, "default": 0.2},
         "seam_allowance_width": {"type": "number", "minimum": 0, "default": 0},
     },
@@ -151,6 +163,11 @@ EXPORT_ARTIFACTS_INPUT = {
 }
 
 TOOL_DEFINITIONS = (
+    {
+        "name": "get_estimation_questionnaire",
+        "description": "Return the setup questionnaire and global fabric-width presets for rough marker estimation.",
+        "inputSchema": GET_ESTIMATION_QUESTIONNAIRE_INPUT,
+    },
     {
         "name": "create_job",
         "description": "Create an isolated job workspace and return an opaque job ID.",

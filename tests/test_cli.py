@@ -53,7 +53,9 @@ class FatternCliTests(unittest.TestCase):
         self.assertEqual(response["layout"]["efficiency"], 0.4)
         self.assertTrue((output_dir / "marker_preview.svg").is_file())
         self.assertTrue((output_dir / "marker_report.md").is_file())
+        self.assertTrue((output_dir / "result.json").is_file())
         self.assertIn("- marker_length: 3 cm", (output_dir / "marker_report.md").read_text(encoding="utf-8"))
+        self.assertEqual(json.loads((output_dir / "result.json").read_text(encoding="utf-8"))["status"], "completed")
         self.assertNotIn("fattern-jobs", stdout.getvalue())
 
     def test_one_way_fabric_without_grainline_returns_blocker(self) -> None:

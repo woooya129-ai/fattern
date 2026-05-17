@@ -31,6 +31,7 @@ class McpToolRegistry:
     def __init__(self, store: JobStore | None = None) -> None:
         self.store = store or JobStore()
         self._handlers: dict[str, Callable[[dict[str, Any]], ToolResponse]] = {
+            "get_estimation_questionnaire": self._get_estimation_questionnaire,
             "create_job": self._create_job,
             "register_input_file": self._register_input_file,
             "parse_dxf": self._parse_dxf,
@@ -60,6 +61,20 @@ class McpToolRegistry:
             return _error_response(code, exc.public_message)
         except Exception:
             return _error_response("INTERNAL_TOOL_ERROR", "Tool execution failed.")
+
+    def _get_estimation_questionnaire(self, arguments: dict[str, Any]) -> ToolResponse:
+        from fattern.orchestration.fabric_presets import FABRIC_WIDTH_PRESETS
+        from fattern.orchestration.intent import build_estimation_questionnaire
+
+        questionnaire = build_estimation_questionnaire()
+        return {
+            "schema_version": questionnaire["schema_version"],
+            "blocking": questionnaire["blocking"],
+            "questions": questionnaire["questions"],
+            "fabric_width_presets": list(FABRIC_WIDTH_PRESETS),
+            "warnings": [],
+            "errors": [],
+        }
 
     def _create_job(self, arguments: dict[str, Any]) -> ToolResponse:
         record = self.store.create_job(
@@ -145,6 +160,9 @@ class McpToolRegistry:
         result = calculate_piece_set_metrics(
             pieces,
             unit=arguments["unit"],
+            dxf_unit_hint=arguments.get("dxf_unit_hint", "auto"),
+            fabric_width=arguments.get("fabric_width"),
+            fabric_width_unit=arguments.get("fabric_width_unit"),
             seam_allowance_width=arguments.get("seam_allowance_width", 0.0),
         )
         warnings, errors = _split_messages(result.messages)
@@ -152,6 +170,8 @@ class McpToolRegistry:
             "job_id": job_id,
             "piece_metrics": [_piece_metrics(metric) for metric in result.metrics],
             "total_area": _total_area(result),
+            "dxf_unit": result.source_unit,
+            "unit_scale": result.unit_scale,
             "warnings": warnings,
             "errors": errors,
         }
@@ -309,6 +329,8 @@ def _piece_metrics(metric: PieceMetrics) -> dict[str, Any]:
         "unit": metric.unit,
         "point_count": metric.point_count,
         "seam_allowance_width": metric.seam_allowance_width,
+        "source_unit": metric.source_unit,
+        "unit_scale": metric.unit_scale,
     }
 
 

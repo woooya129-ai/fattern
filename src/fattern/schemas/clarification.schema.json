@@ -22,10 +22,14 @@
               "dxf_file",
               "fabric_width",
               "unit",
+              "dxf_unit_hint",
               "piece_quantity",
               "grainline_rule",
               "rotation_rule",
+              "rotation_allowed_degrees",
               "seam_allowance_included",
+              "seam_allowance_width",
+              "clearance",
               "one_way_fabric"
             ]
           },

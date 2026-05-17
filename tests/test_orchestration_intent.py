@@ -32,6 +32,7 @@ class UserIntentNormalizationTests(unittest.TestCase):
         self.assertEqual(intent["schema_version"], "1.0")
         self.assertEqual(intent["intent"], "estimate_yield")
         self.assertEqual(intent["unit"], "cm")
+        self.assertEqual(intent["dxf_unit_hint"], "auto")
         self.assertEqual(intent["fabric"], {"width": 150, "width_unit": "cm"})
         self.assertIsNone(intent["rules"]["seam_allowance_width"])
         self.assertEqual(intent["missing_fields"], [])

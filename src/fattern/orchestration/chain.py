@@ -136,7 +136,12 @@ def execute_marker_estimation(
         active_registry,
         state,
         "parse_dxf",
-        {"schema_version": "1.0", "job_id": job_id, "file_id": file_id, "unit_hint": user_intent["unit"]},
+        {
+            "schema_version": "1.0",
+            "job_id": job_id,
+            "file_id": file_id,
+            "unit_hint": user_intent.get("dxf_unit_hint", "auto"),
+        },
     )
     if _blocked(parse_response):
         return _blocked_result(state, "parse_dxf", parse_response)
@@ -172,6 +177,9 @@ def execute_marker_estimation(
             "job_id": job_id,
             "piece_set_id": piece_set_id,
             "unit": user_intent["unit"],
+            "dxf_unit_hint": user_intent.get("dxf_unit_hint", "auto"),
+            "fabric_width": user_intent["fabric"]["width"],
+            "fabric_width_unit": user_intent["fabric"]["width_unit"],
             "seam_allowance_width": _seam_allowance_width(user_intent),
         },
     )
@@ -180,6 +188,8 @@ def execute_marker_estimation(
 
     metrics_id = metrics_response["metrics_id"]
     state["metrics_id"] = metrics_id
+    state["dxf_unit"] = metrics_response.get("dxf_unit")
+    state["unit_scale"] = metrics_response.get("unit_scale")
 
     layout_response = _call_tool(
         active_registry,

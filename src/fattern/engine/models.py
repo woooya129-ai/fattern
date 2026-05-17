@@ -72,12 +72,16 @@ class PieceMetrics:
     point_count: int
     points: tuple[Point, ...] = ()
     seam_allowance_width: float = 0.0
+    source_unit: str | None = None
+    unit_scale: float = 1.0
 
 
 @dataclass(frozen=True)
 class MetricsResult:
     metrics: tuple[PieceMetrics, ...]
     messages: tuple[EngineMessage, ...]
+    source_unit: str | None = None
+    unit_scale: float = 1.0
 
     def has_blocker(self) -> bool:
         return any(message.severity == "blocker" for message in self.messages)

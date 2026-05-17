@@ -67,6 +67,23 @@ class GeometryMetricTests(unittest.TestCase):
         self.assertAlmostEqual(metric.seam_allowance_width, 1.0)
         self.assertEqual(result.messages[0].code, "SEAM_ALLOWANCE_ESTIMATED")
 
+    def test_piece_metrics_autoscales_mm_dxf_to_cm(self) -> None:
+        result = calculate_piece_metrics(
+            candidate(((0.0, 0.0), (400.0, 0.0), (400.0, 300.0), (0.0, 300.0))),
+            unit="cm",
+            dxf_unit_hint="auto",
+            fabric_width=100.0,
+            fabric_width_unit="cm",
+        )
+
+        self.assertFalse(result.has_blocker())
+        metric = result.metrics[0]
+        self.assertEqual(result.source_unit, "mm")
+        self.assertAlmostEqual(result.unit_scale, 0.1)
+        self.assertAlmostEqual(metric.bbox.width, 40.0)
+        self.assertAlmostEqual(metric.bbox.height, 30.0)
+        self.assertEqual(result.messages[0].code, "DXF_UNIT_AUTOSCALE_APPLIED")
+
     def test_self_intersection_returns_blocker(self) -> None:
         result = calculate_piece_metrics(candidate(((0.0, 0.0), (2.0, 2.0), (0.0, 2.0), (2.0, 0.0))))
 

@@ -36,6 +36,7 @@ class McpToolTests(unittest.TestCase):
         self.assertEqual(
             names,
             {
+                "get_estimation_questionnaire",
                 "create_job",
                 "register_input_file",
                 "parse_dxf",
@@ -61,6 +62,16 @@ class McpToolTests(unittest.TestCase):
         self.assertIn("render_marker_svg", runtime_names)
         self.assertIn("get_job_status", runtime_names)
         self.assertIn("export_artifacts", runtime_names)
+
+    def test_get_estimation_questionnaire_returns_fabric_width_presets(self) -> None:
+        response = self.registry.call_tool("get_estimation_questionnaire", {"schema_version": "1.0"})
+
+        self.assertEqual(response["errors"], [])
+        fields = [question["field"] for question in response["questions"]]
+        self.assertIn("fabric_width", fields)
+        self.assertIn("dxf_unit_hint", fields)
+        self.assertIn("seam_allowance_width", fields)
+        self.assertGreaterEqual(len(response["fabric_width_presets"]), 5)
 
     def test_validation_failure_returns_tool_validation_failed(self) -> None:
         response = self.registry.call_tool(
@@ -234,6 +245,34 @@ class McpToolTests(unittest.TestCase):
         self.assertAlmostEqual(response["total_area"], 30.0)
         self.assertEqual(response["piece_metrics"][0]["bbox"], {"width": 6.0, "height": 5.0})
         self.assertAlmostEqual(response["piece_metrics"][0]["seam_allowance_width"], 1.0)
+
+    def test_calculate_piece_metrics_autoscales_dxf_unit(self) -> None:
+        job_id = self._create_job()
+        piece_set_id = self.store.store_piece_set(
+            job_id,
+            (
+                self._candidate(((0.0, 0.0), (400.0, 0.0), (400.0, 300.0), (0.0, 300.0))),
+            ),
+        )
+
+        response = self.registry.call_tool(
+            "calculate_piece_metrics",
+            {
+                "schema_version": "1.0",
+                "job_id": job_id,
+                "piece_set_id": piece_set_id,
+                "unit": "cm",
+                "dxf_unit_hint": "auto",
+                "fabric_width": 100.0,
+                "fabric_width_unit": "cm",
+            },
+        )
+
+        self.assertEqual(response["errors"], [])
+        self.assertEqual(response["dxf_unit"], "mm")
+        self.assertAlmostEqual(response["unit_scale"], 0.1)
+        self.assertEqual(response["warnings"][0]["code"], "DXF_UNIT_AUTOSCALE_APPLIED")
+        self.assertEqual(response["piece_metrics"][0]["bbox"], {"width": 40.0, "height": 30.0})
 
     def test_estimate_marker_layout_returns_layout_id_and_engine_values(self) -> None:
         job_id, metrics_id = self._create_rectangle_metrics()
@@ -515,6 +554,18 @@ class McpToolTests(unittest.TestCase):
         )
         self.assertEqual(extract_response["errors"], [])
         return job_id, extract_response["piece_set_id"]
+
+    def _candidate(self, points: tuple[tuple[float, float], ...]):
+        from fattern.engine import PolylineCandidate
+
+        return PolylineCandidate(
+            piece_id="piece_0001",
+            layer="OUTLINE",
+            points=points,
+            closed=True,
+            source_entity_index=1,
+            vertex_count=len(points),
+        )
 
     def _create_rectangle_layout(self) -> tuple[str, str]:
         job_id, metrics_id = self._create_rectangle_metrics()

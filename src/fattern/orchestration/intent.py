@@ -18,9 +18,12 @@ from fattern.engine.metrics import default_seam_allowance_width
 from fattern.mcp.validation import ToolValidationError, validate_input
 from fattern.schemas import DEFAULT_CLEARANCE_CM, DEFAULT_ROTATION_ALLOWED_DEGREES, ID_PATTERN
 
+from .fabric_presets import QUESTIONNAIRE_FIELDS, fabric_width_allowed_answers
+
 SCHEMA_VERSION = "1.0"
 VALID_INTENTS = {"estimate_yield", "parse_only", "render_preview", "explain_result", "ask_clarification"}
 VALID_UNITS = {"mm", "cm", "inch"}
+VALID_DXF_UNIT_HINTS = {"auto", *VALID_UNITS}
 VALID_ROTATIONS = {0, 90, 180, 270}
 
 
@@ -45,6 +48,7 @@ def normalize_user_intent(raw: dict[str, Any] | None) -> dict[str, Any]:
         "schema_version": SCHEMA_VERSION,
         "intent": _normalize_intent(source.get("intent"), missing_fields),
         "unit": unit,
+        "dxf_unit_hint": _normalize_dxf_unit_hint(source.get("dxf_unit_hint")),
         "fabric": fabric,
         "rules": rules,
         "piece_overrides": _normalize_piece_overrides(source.get("piece_overrides")),
@@ -68,6 +72,16 @@ def build_clarification_request(user_intent: dict[str, Any]) -> dict[str, Any] |
         "schema_version": SCHEMA_VERSION,
         "blocking": True,
         "questions": questions,
+    }
+    validate_clarification_request(request)
+    return request
+
+
+def build_estimation_questionnaire() -> dict[str, Any]:
+    request = {
+        "schema_version": SCHEMA_VERSION,
+        "blocking": True,
+        "questions": [_question_for_field(field) for field in QUESTIONNAIRE_FIELDS],
     }
     validate_clarification_request(request)
     return request
@@ -101,6 +115,14 @@ def _normalize_unit(value: Any) -> str | None:
         if normalized in VALID_UNITS:
             return normalized
     return None
+
+
+def _normalize_dxf_unit_hint(value: Any) -> str:
+    if isinstance(value, str):
+        normalized = value.strip().lower()
+        if normalized in VALID_DXF_UNIT_HINTS:
+            return normalized
+    return "auto"
 
 
 def _normalize_fabric(source: dict[str, Any], unit: str | None) -> dict[str, Any]:
@@ -188,12 +210,16 @@ def _question_for_field(field: str) -> dict[str, Any]:
             "allowed_answers": ["file_id"],
         },
         "fabric_width": {
-            "question": "원단 폭을 숫자로 알려줘.",
-            "allowed_answers": ["number"],
+            "question": "사용할 원단 폭을 선택하거나 직접 숫자로 알려줘.",
+            "allowed_answers": fabric_width_allowed_answers(),
         },
         "unit": {
-            "question": "도면 단위를 선택해줘.",
+            "question": "결과와 원단 폭에 사용할 단위를 선택해줘.",
             "allowed_answers": ["mm", "cm", "inch"],
+        },
+        "dxf_unit_hint": {
+            "question": "DXF 좌표 단위는 자동 추정할까, 직접 지정할까?",
+            "allowed_answers": ["auto", "mm", "cm", "inch"],
         },
         "piece_quantity": {
             "question": "피스별 수량을 알려줘.",
@@ -207,13 +233,25 @@ def _question_for_field(field: str) -> dict[str, Any]:
             "question": "허용 회전 각도를 알려줘.",
             "allowed_answers": ["0", "0,180", "0,90,180,270"],
         },
+        "rotation_allowed_degrees": {
+            "question": "허용 회전 각도를 선택해줘.",
+            "allowed_answers": ["0", "0,180", "0,90,180,270"],
+        },
         "seam_allowance_included": {
             "question": "시접이 패턴에 포함되어 있어?",
             "allowed_answers": ["yes", "no", "unknown"],
         },
+        "seam_allowance_width": {
+            "question": "시접이 없다면 평균 시접값을 쓸까?",
+            "allowed_answers": ["auto: mm 10 / cm 1.0 / inch 0.375", "number", "skip"],
+        },
         "one_way_fabric": {
             "question": "원웨이 원단이야?",
             "allowed_answers": ["yes", "no", "unknown"],
+        },
+        "clearance": {
+            "question": "피스 사이 최소 간격을 지정할까?",
+            "allowed_answers": ["default 0.2", "number"],
         },
     }
     payload = deepcopy(questions[field])

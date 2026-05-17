@@ -18,6 +18,7 @@ from fattern.mcp.schemas import TOOL_SCHEMAS
 SCHEMA_DIR = ROOT / "schemas"
 
 TOOL_INPUT_DEFS = {
+    "get_estimation_questionnaire": "get_estimation_questionnaire_input",
     "create_job": "create_job_input",
     "register_input_file": "register_input_file_input",
     "parse_dxf": "parse_dxf_input",

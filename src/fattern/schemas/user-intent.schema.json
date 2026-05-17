@@ -4,7 +4,7 @@
   "title": "UserIntent",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "intent", "unit", "fabric", "rules", "missing_fields", "confidence"],
+  "required": ["schema_version", "intent", "unit", "dxf_unit_hint", "fabric", "rules", "missing_fields", "confidence"],
   "properties": {
     "schema_version": {"type": "string", "const": "1.0"},
     "intent": {
@@ -12,6 +12,7 @@
       "enum": ["estimate_yield", "parse_only", "render_preview", "explain_result", "ask_clarification"]
     },
     "unit": {"type": ["string", "null"], "enum": ["mm", "cm", "inch", null], "default": "cm"},
+    "dxf_unit_hint": {"type": "string", "enum": ["auto", "mm", "cm", "inch"], "default": "auto"},
     "fabric": {
       "type": "object",
       "additionalProperties": false,
@@ -55,10 +56,13 @@
           "dxf_file",
           "fabric_width",
           "unit",
+          "dxf_unit_hint",
           "piece_quantity",
           "grainline_rule",
           "rotation_rule",
+          "rotation_allowed_degrees",
           "seam_allowance_included",
+          "seam_allowance_width",
           "one_way_fabric"
         ]
       },

@@ -4,6 +4,8 @@
 
 Source-available DXF rough marker yield estimator for garment pattern workflows.
 
+Fattern means **FAST + PATTERN = FATTERN**.
+
 Fattern parses supported DXF pattern outlines, calculates deterministic piece metrics, creates a rough marker layout under a fabric-width constraint, renders an SVG preview, and writes a Markdown report.
 
 This tool estimates rough marker yield. It does not produce final marker yield and does not replace a commercial marker system.
@@ -21,6 +23,7 @@ Commercial use, production use, paid consulting, resale, hosted service use, or 
 - Extracts piece candidates from closed DXF LWPOLYLINE and R12 POLYLINE entities
 - Calculates area, perimeter, bounding boxes, and source polygon outlines
 - Creates polygon-aware rough marker layouts from fabric width, rotation rules, and clearance
+- Infers apparel DXF coordinate units with autoscale and unit conversion
 - Applies average seam allowance for rough marker estimation when the source pattern excludes seam allowance
 - Validates overlap, fabric width, and grainline rules
 - Renders SVG previews
@@ -38,20 +41,35 @@ python -m fattern --help
 Example:
 
 ```powershell
-python -m fattern estimate tests\fixtures\rectangle_lwpolyline.dxf --fabric-width 10 --unit cm --seam-allowance-included yes --one-way-fabric no --out fattern-output
+python -m fattern estimate tests\fixtures\rectangle_lwpolyline.dxf --fabric-width 10 --unit cm --seam-allowance-included yes --one-way-fabric no
 ```
+
+The default output directory is `output`. Generated files are organized as `marker_preview.svg`, `marker_report.md`, and `result.json`.
+
+DXF coordinate units default to `--dxf-unit auto`, which infers a likely apparel-pattern unit from the parsed piece sizes. Use `--dxf-unit mm`, `--dxf-unit cm`, or `--dxf-unit inch` when the drawing is ambiguous.
 
 If the source pattern does not include seam allowance, run with `--seam-allowance-included no`. The default average values are `cm=1.0`, `mm=10.0`, and `inch=0.375`.
 
 ```powershell
-python -m fattern estimate tests\fixtures\rectangle_lwpolyline.dxf --fabric-width 10 --unit cm --seam-allowance-included no --one-way-fabric no --out fattern-output
+python -m fattern estimate tests\fixtures\rectangle_lwpolyline.dxf --fabric-width 10 --unit cm --seam-allowance-included no --one-way-fabric no
 ```
 
 To override the default, pass `--seam-allowance`.
 
 ```powershell
-python -m fattern estimate tests\fixtures\rectangle_lwpolyline.dxf --fabric-width 10 --unit cm --seam-allowance-included no --seam-allowance 0.8 --one-way-fabric no --out fattern-output
+python -m fattern estimate tests\fixtures\rectangle_lwpolyline.dxf --fabric-width 10 --unit cm --seam-allowance-included no --seam-allowance 0.8 --one-way-fabric no
 ```
+
+## Fabric Width Options
+
+There is no single global fabric-width standard. Fattern presents common worldwide working widths as questionnaire presets.
+
+- `44-45 in / 112-115 cm`: basic apparel, quilting cotton, crafts
+- `54 in / 137 cm`: common apparel, upholstery, and home decor width
+- `58-60 in / 147-152 cm`: wide apparel fabrics, knits, dresses, coats
+- `108 in / 274 cm`: quilt backing, bedding, large panels
+- `118 in / 300 cm`: extra-wide curtain and sheer drapery fabrics
+- `custom`: enter the actual fabric width
 
 On Windows, the local wrapper also works:
 
@@ -79,6 +97,20 @@ Example configuration:
 
 DXF paths are not accepted as MCP tool input. Clients should call `register_input_file` with `file_name` and `content_base64`, then pass the returned `file_id` to `parse_dxf`.
 
+MCP clients can call `get_estimation_questionnaire` first to get the setup questionnaire. The fields are:
+
+```text
+dxf_file
+fabric_width
+unit
+dxf_unit_hint
+seam_allowance_included
+seam_allowance_width
+one_way_fabric
+rotation_allowed_degrees
+clearance
+```
+
 ## Development
 
 Run the test suite:
@@ -102,6 +134,7 @@ The current implementation is MVP-scoped.
 - SVG previews render the placed closed-polyline outlines instead of bbox rectangles
 - Falls back to conservative bbox placement with a `BBOX_FALLBACK_USED` warning when compact polygon candidates fail full-outline validation
 - Seam allowance uses a rough average outline expansion and is not an exact CAD offset-curve calculation
+- DXF autoscale is an apparel-pattern-size heuristic; ambiguous drawings should pass an explicit `dxf_unit_hint`
 - DXF layer convention detection is limited
 - Arbitrary-angle rotation, advanced curve flattening, print matching, and commercial-CAD-grade nesting are out of scope
 

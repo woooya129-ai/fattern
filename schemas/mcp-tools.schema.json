@@ -32,6 +32,7 @@
         "name": {
           "type": "string",
           "enum": [
+            "get_estimation_questionnaire",
             "create_job",
             "register_input_file",
             "parse_dxf",
@@ -46,6 +47,17 @@
         "inputSchema": {
           "type": "object",
           "additionalProperties": true
+        }
+      }
+    },
+    "get_estimation_questionnaire_input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["schema_version"],
+      "properties": {
+        "schema_version": {
+          "type": "string",
+          "const": "1.0"
         }
       }
     },
@@ -126,8 +138,8 @@
         },
         "unit_hint": {
           "type": ["string", "null"],
-          "enum": ["mm", "cm", "inch", null],
-          "default": "cm"
+          "enum": ["auto", "mm", "cm", "inch", null],
+          "default": "auto"
         },
         "layer_profile": {
           "type": ["string", "null"],
@@ -193,6 +205,21 @@
           "type": "string",
           "enum": ["mm", "cm", "inch"],
           "default": "cm"
+        },
+        "dxf_unit_hint": {
+          "type": "string",
+          "enum": ["auto", "mm", "cm", "inch"],
+          "default": "auto"
+        },
+        "fabric_width": {
+          "type": ["number", "null"],
+          "minimum": 1,
+          "default": null
+        },
+        "fabric_width_unit": {
+          "type": ["string", "null"],
+          "enum": ["mm", "cm", "inch", null],
+          "default": null
         },
         "curve_flattening_tolerance": {
           "type": "number",
