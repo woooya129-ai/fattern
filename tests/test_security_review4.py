@@ -21,6 +21,7 @@ TOOL_INPUT_DEFS = {
     "get_estimation_questionnaire": "get_estimation_questionnaire_input",
     "create_job": "create_job_input",
     "register_input_file": "register_input_file_input",
+    "estimate_workspace_dxf": "estimate_workspace_dxf_input",
     "parse_dxf": "parse_dxf_input",
     "extract_pattern_pieces": "extract_pattern_pieces_input",
     "calculate_piece_metrics": "calculate_piece_metrics_input",

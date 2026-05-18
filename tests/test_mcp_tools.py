@@ -42,6 +42,7 @@ class McpToolTests(unittest.TestCase):
                 "get_estimation_questionnaire",
                 "create_job",
                 "register_input_file",
+                "estimate_workspace_dxf",
                 "parse_dxf",
                 "extract_pattern_pieces",
                 "calculate_piece_metrics",
@@ -67,6 +68,7 @@ class McpToolTests(unittest.TestCase):
         self.assertIn("get_job_status", runtime_names)
         self.assertIn("export_artifacts", runtime_names)
         self.assertIn("calculate_marker_yield", runtime_names)
+        self.assertIn("estimate_workspace_dxf", runtime_names)
 
     def test_get_estimation_questionnaire_returns_fabric_width_presets(self) -> None:
         response = self.registry.call_tool("get_estimation_questionnaire", {"schema_version": "1.0"})
@@ -175,6 +177,62 @@ class McpToolTests(unittest.TestCase):
         )
 
         self.assertEqual(response["errors"][0]["code"], "TOOL_VALIDATION_FAILED")
+
+    def test_estimate_workspace_dxf_returns_run_links_and_output_files(self) -> None:
+        workspace = Path(self.temp_dir) / "workspace"
+        input_dir = workspace / "input"
+        input_dir.mkdir(parents=True)
+        shutil.copyfile(FIXTURE_DIR / "rectangle_lwpolyline.dxf", input_dir / "sample.dxf")
+        output_root = Path(self.temp_dir) / "runs"
+        registry = McpToolRegistry(
+            self.store,
+            workspace_root=workspace,
+            output_root=output_root,
+            web_base_url="http://127.0.0.1:8765",
+            persist_runs=True,
+        )
+
+        response = registry.call_tool(
+            "estimate_workspace_dxf",
+            {
+                "schema_version": "1.0",
+                "relative_path": "input/sample.dxf",
+                "fabric_width": 10,
+                "unit": "cm",
+            },
+        )
+
+        self.assertEqual(response["status"], "completed")
+        self.assertEqual(response["workspace_relative_path"], "input/sample.dxf")
+        self.assertIn("run_id", response)
+        self.assertIn("web_url", response)
+        self.assertIn("preview_url", response)
+        run_dir = Path(response["output_dir"])
+        self.assertTrue(run_dir.is_dir())
+        self.assertTrue((run_dir / "marker_preview.svg").is_file())
+        self.assertTrue((run_dir / "marker_report.md").is_file())
+        self.assertTrue((run_dir / "marker_report.pdf").is_file())
+        self.assertTrue((run_dir / "report.csv").is_file())
+        self.assertTrue((run_dir / "result.json").is_file())
+        self.assertTrue((run_dir / "run_summary.txt").is_file())
+
+    def test_estimate_workspace_dxf_rejects_unsafe_paths(self) -> None:
+        workspace = Path(self.temp_dir) / "workspace"
+        workspace.mkdir()
+        registry = McpToolRegistry(self.store, workspace_root=workspace)
+        rejected = ["../outside.dxf", str((workspace / "sample.dxf").resolve()), "input/sample.txt"]
+        for relative_path in rejected:
+            with self.subTest(relative_path=relative_path):
+                response = registry.call_tool(
+                    "estimate_workspace_dxf",
+                    {
+                        "schema_version": "1.0",
+                        "relative_path": relative_path,
+                        "fabric_width": 10,
+                        "unit": "cm",
+                    },
+                )
+                self.assertIn(response["errors"][0]["code"], {"INVALID_WORKSPACE_PATH", "UNSUPPORTED_FILE_TYPE"})
 
     def test_register_input_file_rejects_path_like_file_name(self) -> None:
         job_id = self._create_job()
@@ -786,6 +844,35 @@ class McpToolTests(unittest.TestCase):
         self.assertEqual(response["confidence"]["grade"], "B")
         self.assertIn("## Quote Summary", report_text)
         self.assertIn("- quote_yield: 4.5 cm", report_text)
+
+    def test_calculate_marker_yield_with_persistence_returns_run_urls(self) -> None:
+        store = JobStore(Path(self.temp_dir) / "persist-jobs")
+        registry = McpToolRegistry(
+            store,
+            output_root=Path(self.temp_dir) / "persist-output",
+            web_base_url="http://127.0.0.1:8765",
+            persist_runs=True,
+        )
+        job_id = registry.call_tool("create_job", {"schema_version": "1.0", "job_name": "persist"})["job_id"]
+        file_id = store.register_input_file(
+            job_id,
+            "sample.dxf",
+            (FIXTURE_DIR / "rectangle_lwpolyline.dxf").read_bytes(),
+        )
+
+        response = registry.call_tool(
+            "calculate_marker_yield",
+            self._marker_yield_request(pattern_file_id=file_id, size_ratio={}),
+        )
+
+        self.assertEqual(response["status"], "completed")
+        self.assertIn("run_id", response)
+        self.assertTrue(response["web_url"].endswith(f"/runs/{response['run_id']}"))
+        self.assertTrue(response["preview_url"].endswith("/marker_preview.svg"))
+        self.assertTrue(response["report_url"].endswith("/marker_report.pdf"))
+        self.assertTrue((Path(response["output_dir"]) / "run_summary.txt").is_file())
+        result_json = json.loads((Path(response["output_dir"]) / "result.json").read_text(encoding="utf-8"))
+        self.assertEqual(result_json["run_id"], response["run_id"])
 
     def test_calculate_marker_yield_stops_on_blocker_without_following_tools(self) -> None:
         job_id = self._create_job()

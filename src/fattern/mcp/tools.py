@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import re
 from base64 import b64decode
 from binascii import Error as Base64DecodeError
@@ -10,6 +11,7 @@ from collections.abc import Sequence
 from copy import deepcopy
 from dataclasses import replace
 from math import hypot
+from pathlib import Path
 from typing import Any, Callable
 
 from fattern.engine import (
@@ -24,10 +26,11 @@ from fattern.engine import (
 )
 from fattern.geometry import BoundingBox
 from fattern.engine.metrics import calculate_piece_set_metrics
-from fattern.jobs import JobError, JobStore, SecurityError
+from fattern.jobs import JobError, JobStore, SecurityError, resolve_workspace_file
 from fattern.quote import build_quote_decision
 from fattern.report import PieceReportMetadata, partial_csv_fields, render_marker_csv, render_marker_pdf, render_marker_report
 from fattern.render import render_marker_svg
+from fattern.runs import default_output_root, default_web_base_url, persist_run_outputs
 
 from .schemas import TOOL_SCHEMAS, list_tool_definitions
 from .validation import ToolValidationError, validate_input
@@ -36,12 +39,25 @@ ToolResponse = dict[str, Any]
 
 
 class McpToolRegistry:
-    def __init__(self, store: JobStore | None = None) -> None:
+    def __init__(
+        self,
+        store: JobStore | None = None,
+        *,
+        workspace_root: Path | str | None = None,
+        output_root: Path | str | None = None,
+        web_base_url: str | None = None,
+        persist_runs: bool = False,
+    ) -> None:
         self.store = store or JobStore()
+        self.workspace_root = _default_workspace_root(workspace_root)
+        self.output_root = Path(output_root) if output_root is not None else default_output_root()
+        self.web_base_url = web_base_url if web_base_url is not None else default_web_base_url()
+        self.persist_runs = persist_runs
         self._handlers: dict[str, Callable[[dict[str, Any]], ToolResponse]] = {
             "get_estimation_questionnaire": self._get_estimation_questionnaire,
             "create_job": self._create_job,
             "register_input_file": self._register_input_file,
+            "estimate_workspace_dxf": self._estimate_workspace_dxf,
             "parse_dxf": self._parse_dxf,
             "extract_pattern_pieces": self._extract_pattern_pieces,
             "calculate_piece_metrics": self._calculate_piece_metrics,
@@ -110,6 +126,19 @@ class McpToolRegistry:
             "warnings": [],
             "errors": [],
         }
+
+    def _estimate_workspace_dxf(self, arguments: dict[str, Any]) -> ToolResponse:
+        try:
+            dxf_path = _resolve_workspace_relative_dxf(self.workspace_root, arguments["relative_path"])
+        except SecurityError as exc:
+            return _error_response(exc.code, exc.public_message)
+
+        record = self.store.create_job(f"workspace:{dxf_path.stem}")
+        file_id = self.store.register_input_file(record.job_id, dxf_path.name, dxf_path.read_bytes())
+        request = _workspace_marker_yield_request(file_id, arguments)
+        response = self.call_tool("calculate_marker_yield", request)
+        response["workspace_relative_path"] = _workspace_display_path(self.workspace_root, dxf_path)
+        return response
 
     def _parse_dxf(self, arguments: dict[str, Any]) -> ToolResponse:
         job_id = arguments["job_id"]
@@ -315,10 +344,12 @@ class McpToolRegistry:
             "status": "running",
             "job_id": job_id,
             "pattern_file_id": arguments["pattern_file_id"],
+            "source_name": file_record.original_name,
             "tool_calls": tool_calls,
             "warnings": warnings,
             "errors": [],
             "store": self.store,
+            "registry": self,
         }
 
         effective_width = arguments.get("cuttable_width") or arguments["fabric_width"]
@@ -563,6 +594,14 @@ class McpToolRegistry:
             pdf_artifact_id,
             csv_artifact_id,
         ]
+        if self.persist_runs:
+            response, _run = persist_run_outputs(
+                self.store,
+                response,
+                source_name=file_record.original_name,
+                output_root=self.output_root,
+                web_base_url=self.web_base_url,
+            )
         self.store.get_artifact(job_id, result_artifact_id).path.write_text(
             json.dumps(response, ensure_ascii=False, indent=2, sort_keys=True),
             encoding="utf-8",
@@ -578,6 +617,60 @@ def tools_list(registry: McpToolRegistry | None = None) -> dict[str, Any]:
 def tools_call(name: str, arguments: dict[str, Any], registry: McpToolRegistry | None = None) -> ToolResponse:
     active_registry = registry or McpToolRegistry()
     return active_registry.call_tool(name, arguments)
+
+
+def _default_workspace_root(value: Path | str | None) -> Path:
+    if value is not None:
+        return Path(value).resolve()
+    configured = (
+        os.environ.get("FATTERN_WORKSPACE_ROOT")
+        or os.environ.get("CLAUDE_PROJECT_DIR")
+        or os.environ.get("CODEX_WORKSPACE")
+    )
+    return Path(configured).resolve() if configured else Path.cwd().resolve()
+
+
+def _resolve_workspace_relative_dxf(workspace_root: Path, relative_path: str) -> Path:
+    if not isinstance(relative_path, str) or not relative_path.strip():
+        raise SecurityError("INVALID_WORKSPACE_PATH", "Workspace path is required.")
+    candidate = Path(relative_path.strip())
+    if candidate.is_absolute() or candidate.drive or candidate.root:
+        raise SecurityError("INVALID_WORKSPACE_PATH", "Only workspace-relative DXF paths are allowed.")
+    if any(part in {"", ".", ".."} for part in candidate.parts):
+        raise SecurityError("INVALID_WORKSPACE_PATH", "Workspace path failed validation.")
+    if candidate.suffix.lower() != ".dxf":
+        raise SecurityError("UNSUPPORTED_FILE_TYPE", "Pattern input must be a DXF file.")
+    return resolve_workspace_file(workspace_root, workspace_root / candidate, allowed_suffixes=frozenset({".dxf"}))
+
+
+def _workspace_marker_yield_request(pattern_file_id: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    request = {
+        "schema_version": "1.0",
+        "pattern_file_id": pattern_file_id,
+        "fabric_width": arguments["fabric_width"],
+        "unit": arguments["unit"],
+        "size_ratio": arguments.get("size_ratio", {}),
+        "piece_quantity": arguments.get("piece_quantity", {}),
+        "spacing": arguments.get("spacing", 0.2),
+        "allowed_rotation": arguments.get("allowed_rotation", [0]),
+        "grainline_required": arguments.get("grainline_required", False),
+        "nap_direction": arguments.get("nap_direction", "two_way"),
+        "shrinkage_percent": arguments.get("shrinkage_percent", 0),
+        "fabric_type": arguments.get("fabric_type", "unknown"),
+        "seam_allowance": arguments.get("seam_allowance", {"status": "included"}),
+        "allowance_policy": arguments.get("allowance_policy", {"mode": "fast_quote"}),
+    }
+    for optional in ("cuttable_width", "shrinkage", "stretch_direction"):
+        if optional in arguments:
+            request[optional] = arguments[optional]
+    return request
+
+
+def _workspace_display_path(workspace_root: Path, path: Path) -> str:
+    try:
+        return path.relative_to(workspace_root).as_posix()
+    except ValueError:
+        return path.name
 
 
 def _filter_pieces(
@@ -1255,6 +1348,20 @@ def _finalize_marker_yield(
     if result_artifact_id is not None:
         response["artifact_ids"] = {"result_json": result_artifact_id}
         response["export_artifact_ids"] = [result_artifact_id]
+        registry = state.get("registry")
+        store = state.get("store")
+        if isinstance(registry, McpToolRegistry) and isinstance(store, JobStore) and registry.persist_runs:
+            response, _run = persist_run_outputs(
+                store,
+                response,
+                source_name=str(state.get("source_name") or "blocked.dxf"),
+                output_root=registry.output_root,
+                web_base_url=registry.web_base_url,
+            )
+            store.get_artifact(job_id, result_artifact_id).path.write_text(
+                json.dumps(response, ensure_ascii=False, indent=2, sort_keys=True),
+                encoding="utf-8",
+            )
     return response
 
 

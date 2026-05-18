@@ -39,6 +39,8 @@ class WebUiTests(unittest.TestCase):
                 "shrinkage_percent": "0",
             },
             store=store,
+            output_root=self.temp_dir / "output",
+            web_base_url="http://127.0.0.1:8765",
         )
 
         self.assertEqual(result.result["status"], "completed")
@@ -46,6 +48,12 @@ class WebUiTests(unittest.TestCase):
         self.assertEqual(result.result["minimum_yield"]["marker_length"], 3.0)
         self.assertIn("quote_yield", result.result)
         self.assertIsNotNone(result.archive_artifact_id)
+        self.assertIsNotNone(result.run)
+        assert result.run is not None
+        self.assertTrue((result.run.output_dir / "marker_preview.svg").is_file())
+        self.assertTrue((result.run.output_dir / "result.json").is_file())
+        self.assertTrue((result.run.output_dir / "run_summary.txt").is_file())
+        self.assertIn("web_url", result.result)
 
     def test_parse_multipart_form_extracts_fields_and_file(self) -> None:
         boundary = "----fattern-test"

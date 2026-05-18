@@ -100,6 +100,55 @@ REGISTER_INPUT_FILE_INPUT = {
     },
 }
 
+ESTIMATE_WORKSPACE_DXF_INPUT = {
+    "type": "object",
+    "additionalProperties": False,
+    "required": ["schema_version", "relative_path", "fabric_width", "unit"],
+    "properties": {
+        "schema_version": {"type": "string", "const": "1.0"},
+        "relative_path": {"type": "string", "minLength": 1, "maxLength": 260},
+        "fabric_width": {"type": "number", "minimum": 1},
+        "cuttable_width": {"type": ["number", "null"], "minimum": 1, "default": None},
+        "unit": {"type": "string", "enum": ["mm", "cm", "m", "inch", "ft", "yd"], "default": "cm"},
+        "size_ratio": SIZE_RATIO_SCHEMA,
+        "piece_quantity": PIECE_QUANTITY_SCHEMA,
+        "spacing": {"type": "number", "minimum": 0, "default": 0.2},
+        "allowed_rotation": {
+            "type": "array",
+            "items": {"type": "integer", "enum": [0, 90, 180, 270]},
+            "minItems": 1,
+            "maxItems": 4,
+            "uniqueItems": True,
+            "default": [0],
+        },
+        "grainline_required": {"type": "boolean", "default": False},
+        "nap_direction": {
+            "type": "string",
+            "enum": ["one_way", "two_way", "none", "no_nap", "not_one_way", "unknown"],
+            "default": "two_way",
+        },
+        "shrinkage_percent": {"type": "number", "minimum": 0, "default": 0},
+        "shrinkage": SHRINKAGE_SCHEMA,
+        "fabric_type": {"type": "string", "enum": ["woven", "knit", "unknown"], "default": "unknown"},
+        "stretch_direction": {
+            "type": ["string", "null"],
+            "enum": ["lengthwise", "crosswise", "bias", "unknown", None],
+            "default": None,
+        },
+        "seam_allowance": {
+            "type": "object",
+            "additionalProperties": False,
+            "required": ["status"],
+            "properties": {
+                "status": {"type": "string", "enum": ["included", "excluded"]},
+                "fallback_width": {"type": ["number", "null"], "minimum": 0, "default": None},
+            },
+            "default": {"status": "included"},
+        },
+        "allowance_policy": ALLOWANCE_POLICY_SCHEMA,
+    },
+}
+
 PARSE_DXF_INPUT = {
     "type": "object",
     "additionalProperties": False,
@@ -297,6 +346,11 @@ TOOL_DEFINITIONS = (
         "name": "register_input_file",
         "description": "Register an input file from base64 content and return an opaque file ID.",
         "inputSchema": REGISTER_INPUT_FILE_INPUT,
+    },
+    {
+        "name": "estimate_workspace_dxf",
+        "description": "Run the rough marker workflow from a workspace-relative DXF path and return Web UI run links.",
+        "inputSchema": ESTIMATE_WORKSPACE_DXF_INPUT,
     },
     {
         "name": "parse_dxf",

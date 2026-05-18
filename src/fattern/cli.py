@@ -15,11 +15,17 @@ from fattern.jobs import JobStore
 from fattern.mcp import McpToolRegistry
 from fattern.mcp.stdio import serve_stdio
 from fattern.orchestration.intent import build_estimation_questionnaire
+from fattern.runs import default_web_base_url, ensure_workspace_dirs, persist_run_outputs
 from fattern.schemas import SUPPORTED_UNITS
 from fattern.web import DEFAULT_HOST, DEFAULT_PORT, serve_web_ui
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    if argv is None:
+        argv = sys.argv[1:]
+    if len(argv) == 0:
+        ensure_workspace_dirs()
+        return serve_web_ui(host=DEFAULT_HOST, port=DEFAULT_PORT, open_browser=True)
     parser = _build_parser()
     args = parser.parse_args(argv)
     if args.command == "estimate":
@@ -29,6 +35,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "mcp-stdio":
         return serve_stdio()
     if args.command == "ui":
+        ensure_workspace_dirs()
         return serve_web_ui(host=args.host, port=args.port, open_browser=args.open_browser)
     parser.print_help()
     return 2
@@ -182,7 +189,7 @@ def _estimate(args: argparse.Namespace) -> int:
         return 2
 
     store = JobStore()
-    registry = McpToolRegistry(store)
+    registry = McpToolRegistry(store, persist_runs=False)
     create_response = registry.call_tool(
         "create_job",
         {"schema_version": "1.0", "job_name": f"fattern:{dxf_path.stem}", "user_note": ""},
@@ -212,17 +219,40 @@ def _estimate(args: argparse.Namespace) -> int:
         print(json.dumps(_public_result(result), ensure_ascii=False, sort_keys=True), file=sys.stderr)
         return 1
 
-    output_dir = _create_run_output_dir(args.out, dxf_path)
-    written = _copy_artifacts(store, result, output_dir)
+    result, run = persist_run_outputs(
+        store,
+        result,
+        source_name=dxf_path.name,
+        output_root=args.out,
+        web_base_url=default_web_base_url(),
+    )
     response = _public_result(result)
-    response["artifacts"] = {name: str(path) for name, path in written.items()}
-    response["output_dir"] = str(output_dir)
+    response["artifacts"] = {
+        "svg": str(run.output_dir / "marker_preview.svg"),
+        "report": str(run.output_dir / "marker_report.md"),
+        "pdf": str(run.output_dir / "marker_report.pdf"),
+        "csv": str(run.output_dir / "report.csv"),
+        "result": str(run.output_dir / "result.json"),
+        "summary": str(run.output_dir / "run_summary.txt"),
+    }
+    response["run_id"] = run.run_id
+    response["output_dir"] = run.output_dir_display
+    if run.web_url is not None:
+        response["web_url"] = run.web_url
+    if run.preview_url is not None:
+        response["preview_url"] = run.preview_url
+    if run.report_url is not None:
+        response["report_url"] = run.report_url
     print(json.dumps(response, ensure_ascii=False, sort_keys=True))
     return 0
 
 
 def _load_answers(answers_path: Path | None, input_dir: Path) -> dict[str, Any]:
-    path = answers_path or input_dir / "answers.json"
+    if answers_path is not None:
+        path = answers_path
+    else:
+        candidates = [input_dir / "answers.json", input_dir.parent / "config" / "answers.json"]
+        path = next((candidate for candidate in candidates if candidate.is_file()), candidates[0])
     if answers_path is None and not path.is_file():
         return {}
     if not path.is_file():

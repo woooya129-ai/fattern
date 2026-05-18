@@ -72,6 +72,7 @@ class SchemaContractTests(unittest.TestCase):
             "create_job_input",
             "get_estimation_questionnaire_input",
             "register_input_file_input",
+            "estimate_workspace_dxf_input",
             "id_only_input",
             "parse_dxf_input",
             "extract_pattern_pieces_input",
@@ -185,6 +186,10 @@ class SchemaContractTests(unittest.TestCase):
         self.assertEqual(marker_props["allowance_policy"]["properties"]["apply_warning_penalty"]["default"], True)
 
         self.assertEqual(inline_opaque_id_refs(marker_input, defs), TOOL_SCHEMAS["calculate_marker_yield"])
+
+    def test_estimate_workspace_dxf_schema_matches_python_tool_schema(self) -> None:
+        schema = load_schema("mcp-tools.schema.json")
+        self.assertEqual(schema["$defs"]["estimate_workspace_dxf_input"], TOOL_SCHEMAS["estimate_workspace_dxf"])
 
     def test_answers_schema_tracks_calculate_marker_yield_without_pattern_file_id(self) -> None:
         mcp_schema = load_schema("mcp-tools.schema.json")

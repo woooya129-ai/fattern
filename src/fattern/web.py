@@ -14,8 +14,19 @@ import json
 import sys
 import webbrowser
 
+from fattern.advisor import build_advisor_state
 from fattern.jobs import JobStore
+from fattern.llm import ask_llm_advisor, llm_status
 from fattern.mcp import McpToolRegistry
+from fattern.runs import (
+    RunRecord,
+    default_output_root,
+    default_web_base_url,
+    ensure_workspace_dirs,
+    load_run_result,
+    persist_run_outputs,
+    resolve_run_file,
+)
 from fattern.schemas import SUPPORTED_UNITS
 
 
@@ -30,6 +41,7 @@ FABRIC_TYPES = ("unknown", "woven", "knit")
 @dataclass(frozen=True)
 class WebEstimateResult:
     result: dict[str, Any]
+    run: RunRecord | None = None
     archive_artifact_id: str | None = None
 
 
@@ -39,11 +51,14 @@ def serve_web_ui(
     port: int = DEFAULT_PORT,
     open_browser: bool = False,
     store: JobStore | None = None,
+    output_root: Path | None = None,
 ) -> int:
     """Serve the local Web UI until interrupted."""
 
+    ensure_workspace_dirs()
     active_store = store or JobStore()
-    server = ThreadingHTTPServer((host, port), _handler_class(active_store))
+    active_output_root = output_root or default_output_root()
+    server = ThreadingHTTPServer((host, port), _handler_class(active_store, active_output_root))
     url = f"http://{host}:{server.server_port}/"
     print(f"Fattern Web UI: {url}", file=sys.stderr, flush=True)
     if open_browser:
@@ -63,6 +78,8 @@ def estimate_upload(
     file_bytes: bytes,
     fields: dict[str, str],
     store: JobStore | None = None,
+    output_root: Path | None = None,
+    web_base_url: str | None = None,
 ) -> WebEstimateResult:
     """Estimate from browser-uploaded bytes without exposing MCP base64 details."""
 
@@ -82,7 +99,7 @@ def estimate_upload(
     allowance_policy = {"mode": _select(fields.get("allowance_policy_mode"), QUOTE_MODES, "fast_quote")}
 
     active_store = store or JobStore()
-    registry = McpToolRegistry(active_store)
+    registry = McpToolRegistry(active_store, persist_runs=False)
     job = active_store.create_job(f"web:{Path(safe_name).stem}")
     file_id = active_store.register_input_file(job.job_id, safe_name, file_bytes)
     request: dict[str, Any] = {
@@ -119,15 +136,25 @@ def estimate_upload(
         )
         if not _has_blocker(export_response):
             archive_artifact_id = export_response.get("archive_artifact_id")
-    return WebEstimateResult(result=result, archive_artifact_id=archive_artifact_id)
+    persisted, run = persist_run_outputs(
+        active_store,
+        result,
+        source_name=safe_name,
+        output_root=output_root or default_output_root(),
+        web_base_url=web_base_url if web_base_url is not None else default_web_base_url(),
+    )
+    return WebEstimateResult(result=persisted, run=run, archive_artifact_id=archive_artifact_id)
 
 
-def _handler_class(store: JobStore) -> type[BaseHTTPRequestHandler]:
+def _handler_class(store: JobStore, output_root: Path) -> type[BaseHTTPRequestHandler]:
     class FatternWebHandler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:  # noqa: N802
             parsed = urlparse(self.path)
             if parsed.path == "/":
                 self._send_html(_render_page())
+                return
+            if parsed.path.startswith("/runs/"):
+                self._send_run(parsed.path)
                 return
             if parsed.path == "/artifact":
                 self._send_artifact(parsed.query)
@@ -135,16 +162,23 @@ def _handler_class(store: JobStore) -> type[BaseHTTPRequestHandler]:
             self.send_error(404)
 
         def do_POST(self) -> None:  # noqa: N802
-            if urlparse(self.path).path != "/estimate":
+            parsed_path = urlparse(self.path).path
+            if parsed_path == "/advisor":
+                self._send_advisor()
+                return
+            if parsed_path != "/estimate":
                 self.send_error(404)
                 return
             try:
                 fields, upload = _read_multipart(self)
+                base_url = f"http://{self.server.server_address[0]}:{self.server.server_address[1]}"
                 estimate = estimate_upload(
                     file_name=upload[0],
                     file_bytes=upload[1],
                     fields=fields,
                     store=store,
+                    output_root=output_root,
+                    web_base_url=base_url,
                 )
                 self._send_html(_render_page(estimate))
             except Exception as exc:
@@ -175,12 +209,58 @@ def _handler_class(store: JobStore) -> type[BaseHTTPRequestHandler]:
             self.end_headers()
             self.wfile.write(data)
 
+        def _send_run(self, path: str) -> None:
+            parts = [part for part in path.split("/") if part]
+            try:
+                if len(parts) == 2:
+                    run_id = parts[1]
+                    result = load_run_result(run_id, output_root)
+                    self._send_html(_render_run_page(run_id, result))
+                    return
+                if len(parts) == 3:
+                    run_id, file_name = parts[1], parts[2]
+                    self._send_run_file(run_id, file_name)
+                    return
+            except ValueError:
+                self.send_error(404)
+                return
+            self.send_error(404)
+
+        def _send_run_file(self, run_id: str, file_name: str) -> None:
+            path = resolve_run_file(run_id, file_name, output_root)
+            data = path.read_bytes()
+            media_type = _media_type_for_file(path.name)
+            disposition = "attachment" if path.suffix.lower() in {".zip", ".pdf", ".csv", ".json", ".txt"} else "inline"
+            self.send_response(200)
+            self.send_header("Content-Type", media_type)
+            self.send_header("Content-Disposition", f'{disposition}; filename="{path.name}"')
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
+        def _send_advisor(self) -> None:
+            try:
+                fields = _read_urlencoded(self)
+                run_id = fields.get("run_id", "")
+                message = fields.get("message", "")
+                result = load_run_result(run_id, output_root)
+                advisor_reply = ask_llm_advisor(user_message=message, result=result)
+                self._send_html(_render_run_page(run_id, result, advisor_reply=advisor_reply))
+            except ValueError:
+                self.send_error(404)
+
     return FatternWebHandler
 
 
-def _render_page(estimate: WebEstimateResult | None = None, *, error: str | None = None) -> str:
+def _render_page(
+    estimate: WebEstimateResult | None = None,
+    *,
+    error: str | None = None,
+    advisor_reply: dict[str, Any] | None = None,
+) -> str:
+    result = estimate.result if estimate is not None else None
     return f"""<!doctype html>
-<html lang="en">
+<html lang="ko">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -230,6 +310,8 @@ def _render_page(estimate: WebEstimateResult | None = None, *, error: str | None
       background: #ffffff;
     }}
     .row {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }}
+    .stack {{ display: grid; gap: 16px; }}
+    .notice {{ margin: 0 0 14px; color: var(--muted); line-height: 1.45; }}
     button {{
       width: 100%;
       min-height: 42px;
@@ -240,6 +322,15 @@ def _render_page(estimate: WebEstimateResult | None = None, *, error: str | None
       font-size: 15px;
       font-weight: 700;
       cursor: pointer;
+    }}
+    textarea {{
+      width: 100%;
+      min-height: 92px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 8px 10px;
+      font-size: 14px;
+      resize: vertical;
     }}
     .error {{ color: var(--danger); border-color: #fecaca; background: #fff1f2; }}
     .summary {{
@@ -265,6 +356,16 @@ def _render_page(estimate: WebEstimateResult | None = None, *, error: str | None
       padding: 7px 10px;
       background: #ffffff;
     }}
+    .small-list {{ margin: 0; padding-left: 18px; color: var(--muted); line-height: 1.45; }}
+    .message-list {{ display: grid; gap: 8px; }}
+    .message {{
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 10px;
+      background: #ffffff;
+    }}
+    .message strong {{ display: block; margin-bottom: 4px; }}
+    .message code {{ color: var(--muted); }}
     img {{ width: 100%; max-height: 720px; object-fit: contain; border: 1px solid var(--border); background: #ffffff; }}
     pre {{ white-space: pre-wrap; word-break: break-word; background: #0f172a; color: #e2e8f0; padding: 12px; border-radius: 8px; }}
     @media (max-width: 860px) {{
@@ -281,8 +382,9 @@ def _render_page(estimate: WebEstimateResult | None = None, *, error: str | None
       {_render_error(error)}
       {_render_form()}
     </section>
-    <section>
+    <section class="stack">
       {_render_result(estimate)}
+      {_render_advisor_panel(result, advisor_reply=advisor_reply)}
     </section>
   </main>
 </body>
@@ -291,7 +393,8 @@ def _render_page(estimate: WebEstimateResult | None = None, *, error: str | None
 
 def _render_form() -> str:
     return """<form action="/estimate" method="post" enctype="multipart/form-data">
-  <h2>Estimate</h2>
+  <h2>질문지</h2>
+  <p class="notice">Fattern은 DXF 패턴으로 rough marker와 견적용 가요척을 계산한다. 생산 확정용 CAD nesting 대체품은 아니다. 모르는 값은 기본값으로 시작해도 된다.</p>
   <label>DXF file<input name="dxf_file" type="file" accept=".dxf" required></label>
   <div class="row">
     <label>Fabric width<input name="fabric_width" type="number" min="1" step="0.001" value="150" required></label>
@@ -362,15 +465,19 @@ def _render_error(error: str | None) -> str:
 
 def _render_result(estimate: WebEstimateResult | None) -> str:
     if estimate is None:
-        return '<div class="panel"><h2>Result</h2><p>Upload a DXF and calculate.</p></div>'
+        return '<div class="panel"><h2>Result</h2><p class="notice">DXF를 업로드하면 preview와 산출물 링크가 여기에 표시된다.</p></div>'
     result = estimate.result
     if result.get("status") != "completed":
-        return f'<div class="panel error"><h2>Blocked</h2><pre>{escape(json.dumps(_public_result(result), ensure_ascii=False, indent=2))}</pre></div>'
+        return f"""<div class="panel error">
+  <h2>Blocked</h2>
+  <div class="links">{_result_links(result, estimate.archive_artifact_id)}</div>
+  <pre>{escape(json.dumps(_public_result(result), ensure_ascii=False, indent=2))}</pre>
+</div>"""
 
     job_id = str(result["job_id"])
     artifacts = result.get("artifact_ids", {})
-    preview_url = _artifact_url(job_id, artifacts.get("marker_preview_svg"))
-    links = _artifact_links(job_id, artifacts, estimate.archive_artifact_id)
+    preview_url = result.get("preview_url") or _artifact_url(job_id, artifacts.get("marker_preview_svg"))
+    links = _result_links(result, estimate.archive_artifact_id)
     minimum = _yield_text(result.get("minimum_yield"), "marker_length")
     quote = _yield_text(result.get("quote_yield"), "final_yield")
     confidence = escape(str(result.get("confidence", {}).get("grade", "unknown")))
@@ -384,6 +491,104 @@ def _render_result(estimate: WebEstimateResult | None) -> str:
   <div class="links">{links}</div>
   {f'<img src="{preview_url}" alt="marker preview">' if preview_url else ''}
 </div>"""
+
+
+def _render_run_page(
+    run_id: str,
+    result: dict[str, Any],
+    *,
+    advisor_reply: dict[str, Any] | None = None,
+) -> str:
+    return _render_page(WebEstimateResult(result=result), advisor_reply=advisor_reply)
+
+
+def _result_links(result: dict[str, Any], archive_artifact_id: str | None = None) -> str:
+    run_id = result.get("run_id")
+    if isinstance(run_id, str) and run_id:
+        labels = {
+            "marker_preview.svg": "SVG",
+            "marker_report.md": "Markdown",
+            "marker_report.pdf": "PDF",
+            "report.csv": "CSV",
+            "result.json": "JSON",
+            "run_summary.txt": "Summary",
+        }
+        files = result.get("run_files")
+        available = set(files) if isinstance(files, list) else set(labels)
+        links = [
+            f'<a href="/runs/{escape(run_id)}/{file_name}">{label}</a>'
+            for file_name, label in labels.items()
+            if file_name in available
+        ]
+        return "".join(links)
+    job_id = str(result.get("job_id", ""))
+    artifacts = result.get("artifact_ids", {})
+    return _artifact_links(job_id, artifacts if isinstance(artifacts, dict) else {}, archive_artifact_id)
+
+
+def _render_advisor_panel(
+    result: dict[str, Any] | None,
+    *,
+    advisor_reply: dict[str, Any] | None = None,
+) -> str:
+    status = llm_status()
+    state = build_advisor_state(result, llm_available=bool(status.get("available")))
+    field_items = "".join(
+        f"<li><strong>{escape(item['title'])}</strong>: {escape(item['text'])}</li>"
+        for item in state["field_help"]
+    )
+    next_steps = "".join(f"<li>{escape(step)}</li>" for step in state["next_steps"])
+    messages = _render_advisor_messages(state["messages"])
+    llm_block = _render_llm_block(result, status, advisor_reply)
+    return f"""<div class="panel">
+  <h2>Advisor</h2>
+  <p class="notice">계산은 Fattern engine이 하고, Advisor는 입력값과 warning을 설명한다.</p>
+  <h3>다음 단계</h3>
+  <ul class="small-list">{next_steps}</ul>
+  <h3>입력 도움말</h3>
+  <ul class="small-list">{field_items}</ul>
+  {messages}
+  {llm_block}
+</div>"""
+
+
+def _render_advisor_messages(messages: list[dict[str, str]]) -> str:
+    if not messages:
+        return ""
+    items = []
+    for message in messages:
+        items.append(
+            f"""<div class="message">
+  <strong>{escape(message['title'])}</strong>
+  <code>{escape(message['code'])}</code>
+  <p>{escape(message['action'])}</p>
+</div>"""
+        )
+    return '<h3>Warning / Blocker</h3><div class="message-list">' + "".join(items) + "</div>"
+
+
+def _render_llm_block(
+    result: dict[str, Any] | None,
+    status: dict[str, str | bool],
+    advisor_reply: dict[str, Any] | None,
+) -> str:
+    reply_html = ""
+    if advisor_reply is not None:
+        if advisor_reply.get("status") == "completed":
+            reply_html = f'<div class="message"><strong>LLM answer</strong><p>{escape(str(advisor_reply.get("answer", "")))}</p></div>'
+        else:
+            reply_html = f'<div class="message"><strong>LLM disabled</strong><p>{escape(str(advisor_reply.get("message", "")))}</p></div>'
+    run_id = result.get("run_id") if isinstance(result, dict) else None
+    if not run_id:
+        return reply_html + '<p class="notice">LLM Advisor는 계산 결과가 있을 때만 사용할 수 있다.</p>'
+    if not status.get("available"):
+        return reply_html + f'<p class="notice">LLM Advisor disabled: {escape(str(status.get("reason", "")))}</p>'
+    return reply_html + f"""<form action="/advisor" method="post">
+  <h3>LLM Advisor</h3>
+  <input type="hidden" name="run_id" value="{escape(str(run_id))}">
+  <label>Question<textarea name="message" maxlength="2000" placeholder="이 결과에서 견적 리스크를 설명해줘"></textarea></label>
+  <button type="submit">Ask Advisor</button>
+</form>"""
 
 
 def _artifact_links(job_id: str, artifacts: dict[str, Any], archive_artifact_id: str | None) -> str:
@@ -432,6 +637,27 @@ def _read_multipart(handler: BaseHTTPRequestHandler) -> tuple[dict[str, str], tu
     if upload is None:
         raise ValueError("DXF file is required.")
     return fields, upload
+
+
+def _read_urlencoded(handler: BaseHTTPRequestHandler) -> dict[str, str]:
+    length = int(handler.headers.get("Content-Length", "0"))
+    if length <= 0 or length > 64_000:
+        raise ValueError("Form body is missing or too large.")
+    body = handler.rfile.read(length).decode("utf-8", errors="replace")
+    parsed = parse_qs(body, keep_blank_values=True)
+    return {key: values[0] if values else "" for key, values in parsed.items()}
+
+
+def _media_type_for_file(file_name: str) -> str:
+    suffix = Path(file_name).suffix.lower()
+    return {
+        ".svg": "image/svg+xml",
+        ".md": "text/markdown; charset=utf-8",
+        ".pdf": "application/pdf",
+        ".csv": "text/csv; charset=utf-8",
+        ".json": "application/json; charset=utf-8",
+        ".txt": "text/plain; charset=utf-8",
+    }.get(suffix, "application/octet-stream")
 
 
 def parse_multipart_form(content_type: str, body: bytes) -> tuple[dict[str, str], dict[str, tuple[str, bytes]]]:

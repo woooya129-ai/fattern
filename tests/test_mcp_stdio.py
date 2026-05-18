@@ -57,6 +57,7 @@ class McpStdioTransportTests(unittest.TestCase):
         )
         tool_names = {tool["name"] for tool in responses[1]["result"]["tools"]}
         self.assertIn("register_input_file", tool_names)
+        self.assertIn("estimate_workspace_dxf", tool_names)
         self.assertIn("parse_dxf", tool_names)
         self.assertIn("calculate_marker_yield", tool_names)
         self.assertFalse(responses[2]["result"]["isError"])
@@ -117,10 +118,12 @@ class McpStdioTransportTests(unittest.TestCase):
         guide_response = server.handle_message(request(2, "prompts/get", {"name": "fattern", "arguments": {}}))
         guide_text = guide_response["result"]["messages"][0]["content"]["text"]
         self.assertIn("1/2 inch", guide_text)
+        self.assertIn("estimate_workspace_dxf", guide_text)
         self.assertIn("register_input_file", guide_text)
         get_response = server.handle_message(request(3, "prompts/get", {"name": "fattern-estimate", "arguments": {}}))
         text = get_response["result"]["messages"][0]["content"]["text"]
         self.assertIn("Default rotation is 0 only", text)
+        self.assertIn("spacing: 0.2", text)
 
 
 if __name__ == "__main__":

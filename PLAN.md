@@ -12,7 +12,7 @@ Engine은 계산 주체다. DXF/AAMA/ASTM 파싱, polygon 추출, grainline, sea
 
 ## 현재 완료 상태
 
-- 릴리스 표기: `pyproject.toml`, `README.md`, `README.en.md` 기준 `0.8.1`로 정리 완료.
+- 릴리스 표기: `pyproject.toml`, `README.md`, `README.en.md` 기준 `0.8.4`로 정리 완료.
 - 빠른 이해와 설치 문서: README 양쪽에 빠른 이해, 설치 방법, 실행 예시, 산출물 목록 반영 완료.
 - 고수준 경로: `calculate_marker_yield`, CLI `estimate`, canonical `answers.json` 연동 완료.
 - 조건 엔진: `cuttable_width`, `size_ratio`, `piece_quantity`, `spacing`, `nap_direction`, `fabric_type`, `shrinkage`, `stretch_direction`, `seam_allowance` 정책 반영 완료.
@@ -23,7 +23,9 @@ Engine은 계산 주체다. DXF/AAMA/ASTM 파싱, polygon 추출, grainline, sea
 - Nesting 개선: shelf compact 보조 step, longest-edge-down attempt, overlap geometry cache 반영 완료.
 - 리포트 산출물: `result.json`, `marker_preview.svg`, `marker_report.md`, `marker_report.pdf`, `report.csv`, 별도 zip export 경로 완료.
 - 견적용 가요척: `minimum_yield`, `quote_yield`, `allowance_breakdown`, `confidence` 출력 완료.
-- 접근성: 로컬 Web UI `fattern ui` 추가 완료. MCP/CLI 기존 계약은 유지한다.
+- 접근성: `fattern` 기본 실행 Web UI 자동 오픈, 로컬 Web UI, MCP, CLI 계약 유지 완료.
+- run 저장 계약: Web UI/CLI/MCP high-level 결과를 `output/run_id/`로 저장하고 `run_summary.txt`, `web_url`, `preview_url`, `report_url`을 노출 완료.
+- Advisor: LLM 없는 deterministic Advisor와 선택형 서버-side LLM Advisor 추가 완료.
 - 계약 정리: LLM-facing schema, MCP tool schema, README 예시, 테스트 계약 동기화 완료.
 - 검수 기준: `python -m unittest discover -s tests` 기준 169 tests OK, 1 skipped.
 
@@ -489,6 +491,299 @@ piece-level grainline이 감지되면 채워짐: grainline_status
 - 사용자 입력, DXF layer명, piece명은 escape한다. (완료)
 - SVG에는 `script`, `foreignObject`, external href, remote resource를 넣지 않는다. (완료)
 
+## v0.8.2 목표: Web UI + MCP 투트랙 접근성 정리
+
+v0.8.2의 목표는 일반 사용자가 CLI/MCP를 몰라도 Web UI로 바로 계산할 수 있게 만들고, Codex/Claude Code 사용자는 MCP로 같은 결과를 조작하면서 Web UI에서 시각적으로 확인할 수 있게 하는 것이다.
+
+핵심 제품 구조는 아래로 고정한다.
+
+```text
+일반 사용자:
+  fattern 실행
+  -> 브라우저 자동 오픈
+  -> Web UI 안내문과 질문지
+  -> DXF 업로드
+  -> output/run_id 산출물 확인
+
+AI 사용 가능 사용자:
+  fattern 또는 fattern ui 실행
+  -> Codex/Claude Code에서 fattern MCP 연결
+  -> MCP tool로 계산
+  -> MCP 응답의 web_url로 Web UI 결과 확인
+```
+
+MCP와 Web UI는 별도 제품이 아니라 같은 core engine과 같은 run artifact 계약을 공유한다. LLM은 계산하지 않고, MCP tool을 호출하고 결과를 설명한다.
+
+### v0.8.2 사용자 경험 계약
+
+- 사용자는 기본적으로 `fattern`만 실행하면 된다.
+- `fattern` 기본 동작은 Web UI 서버 실행과 브라우저 자동 오픈이다.
+- 고급 CLI 계산은 `fattern estimate`로 유지한다.
+- MCP stdio는 `fattern mcp-stdio` 또는 `fattern-mcp`로 유지한다.
+- 첫 실행 시 `input/`, `output/`, `config/` 폴더를 자동 생성한다.
+- Web UI 첫 화면에는 안내문과 질문지가 자동으로 보인다.
+- Web UI 결과는 임시 `JobStore`에만 머물지 않고 `output/YYYYMMDD-HHMMSS_DXF이름/`에 저장한다.
+- Web UI와 MCP 결과는 같은 `run_id`, `output_dir`, `web_url`, `preview_url` 개념을 쓴다.
+- README 첫 화면의 설치/실행 안내는 GitHub zip 한 줄 설치와 `fattern` 실행 중심으로 단순화한다. PyPI 배포 후 `python -m pip install fattern`로 교체할 수 있게 표시한다.
+- 개발자용 editable install, `PYTHONPATH`, 내부 MCP base64 설명은 README 하단 또는 `docs/developer.md`로 분리한다.
+
+### v0.8.2 기본 폴더 계약
+
+```text
+fattern-workspace/
+  input/
+    사용자가 직접 넣는 DXF
+
+  output/
+    20260518-153012_Simple-T/
+      marker_preview.svg
+      marker_report.md
+      marker_report.pdf
+      report.csv
+      result.json
+      run_summary.txt
+
+  config/
+    answers.json
+```
+
+`run_summary.txt`는 일반 사용자를 위한 가장 쉬운 한글 요약이다. JSON/MCP 결과와 숫자가 달라지면 안 된다.
+
+### v0.8.2 Web UI 첫 화면
+
+첫 화면은 긴 설명 문서가 아니라 작업 폼이어야 한다.
+
+```text
+1. DXF 파일 업로드
+2. 원단 폭 입력
+3. 단위 선택
+4. 실제 재단 가능 폭 선택 입력
+5. 시접 포함 여부 선택
+6. 원단 방향성 선택
+7. 식서 필수 여부 선택
+8. 견적 모드 선택
+9. 계산하기
+```
+
+기본값은 아래로 둔다.
+
+```text
+fabric_width: 150
+unit: cm
+cuttable_width: optional
+seam_allowance.status: included
+fallback seam allowance: 1/2 inch
+nap_direction: two_way
+grainline_required: false
+allowed_rotation: [0]
+spacing: 0.2
+allowance_policy.mode: fast_quote
+```
+
+첫 화면 안내문은 아래 의미만 짧게 전달한다.
+
+```text
+Fattern은 DXF 패턴으로 rough marker와 견적용 가요척을 계산한다.
+생산 확정용 CAD nesting 대체품은 아니다.
+DXF를 올리고 원단 폭만 입력하면 먼저 계산할 수 있다.
+모르는 값은 기본값으로 시작할 수 있다.
+```
+
+### v0.8.2 MCP + Web UI 연결 계약
+
+MCP high-level tool 결과에는 아래 필드를 포함한다.
+
+```json
+{
+  "run_id": "20260518-153012_Simple-T",
+  "output_dir": "output/20260518-153012_Simple-T",
+  "web_url": "http://127.0.0.1:8765/runs/20260518-153012_Simple-T",
+  "preview_url": "http://127.0.0.1:8765/runs/20260518-153012_Simple-T/marker_preview.svg",
+  "report_url": "http://127.0.0.1:8765/runs/20260518-153012_Simple-T/marker_report.pdf"
+}
+```
+
+MCP 자체가 Web UI 화면을 보는 기능은 아니다. MCP는 계산과 파일 생성, Web UI는 사람이 보는 확인 화면이다. Codex나 Claude Code 같은 host AI가 브라우저 확인 기능을 갖고 있으면 Web UI까지 검수할 수 있지만, Fattern MCP 계약은 `run_id`와 URL 반환까지만 보장한다.
+
+### 병렬 작업 분해
+
+아래 작업은 서로 다른 파트가 동시에 진행할 수 있게 나눈다.
+
+| 작업 ID | 파트 | 담당 역할 | 내용 | 병렬 가능 | 선행 조건 | 완료 기준 |
+|---|---|---|---|---|---|---|
+| A1 | Product/UX | PM 또는 UX 설계 | 일반 사용자 흐름, 첫 화면 안내문, 질문지 문구 확정 | A2, A3, A4와 병렬 가능 | 없음 | Web UI copy와 필드 정의가 PLAN/README에 반영 |
+| A2 | Web UI | Frontend/Web engineer | `fattern` 기본 실행, 브라우저 자동 오픈, 질문지 자동 표시 | A1, A3와 병렬 가능 | 현재 `fattern ui` | `fattern` 실행 시 Web UI가 열림 |
+| A3 | Backend/Artifacts | Backend engineer | `output/run_id/` 저장, `run_summary.txt`, artifact copy API 구현 | A1, A2, A4와 병렬 가능 | 현재 `JobStore` artifact 계약 | Web UI 계산 후 output 폴더에 파일 6종 저장 |
+| A4 | MCP Integration | MCP/Agent engineer | MCP 결과에 `run_id`, `web_url`, `preview_url`, `output_dir` 추가 | A1, A3와 병렬 가능 | A3의 run registry 설계 | Codex/Claude Code 응답에서 Web UI 링크 확인 |
+| A5 | Workspace Path Tool | Security/backend engineer | workspace-relative DXF path tool 추가, absolute path와 `..` 차단 | A4와 병렬 가능 | workspace root 정책 확정 | MCP에서 `input/Simple-T.dxf` 같은 경로로 계산 가능 |
+| A6 | Docs | Technical writer | README 첫 화면 단순화, 개발자 문서 분리, MCP 사용법 정리 | A1과 병렬 가능 | A1 copy 초안 | 일반 사용자는 설치/실행/파일 위치를 1분 안에 이해 |
+| A7 | QA/Security | QA engineer | Web UI, CLI, MCP 회귀 테스트와 path/upload 보안 테스트 | A2-A5 완료 후 집중 | A2-A5 | unittest 통과, 경로 탈출/대용량 업로드 차단 |
+| A8 | Release | Maintainer | 버전 표기, changelog, commit/push, smoke test | 마지막 | A2-A7 | v0.8.2 릴리스 후보 완료 |
+
+### 병렬 실행 순서
+
+```text
+1차 병렬:
+  A1 Product/UX
+  A2 Web UI 기본 실행
+  A3 output/run_id 저장 구조
+  A6 Docs 초안
+
+2차 병렬:
+  A4 MCP 결과 URL 연결
+  A5 workspace-relative DXF path tool
+  A6 Docs 보강
+
+3차:
+  A7 QA/Security
+  A8 Release
+```
+
+### 역할별 책임
+
+Product/UX:
+
+- 일반 사용자가 보는 문장과 입력 순서를 정한다.
+- 기본값이 실무적으로 위험한지 판단한다.
+- "생산 확정용 아님" 경고를 과하지 않게 노출한다.
+
+Web UI engineer:
+
+- 브라우저 자동 오픈, 첫 화면 질문지, 결과 preview를 담당한다.
+- 사용자가 base64, MCP, JSON을 보지 않게 만든다.
+- 모바일보다 데스크톱 작업 효율을 우선한다.
+
+Backend engineer:
+
+- `JobStore` 임시 artifact를 `output/run_id/`로 내보내는 저장 계약을 만든다.
+- `run_summary.txt`를 `result.json`에서 생성한다.
+- Web UI와 CLI가 같은 artifact 생성 경로를 쓰게 정리한다.
+
+MCP/Agent engineer:
+
+- MCP prompt와 tool output을 Codex/Claude Code 사용 흐름에 맞춘다.
+- workspace-relative path tool을 추가하되 arbitrary local file read가 되지 않게 막는다.
+- MCP 응답에 Web UI 링크를 넣는다.
+
+Docs owner:
+
+- README 첫 화면은 일반 사용자용으로 줄인다.
+- 개발자 설치, editable install, MCP 내부 base64 설명은 별도 문서로 이동한다.
+- `input/`, `output/`, `config/` 폴더 예시를 그림 없이도 이해되게 쓴다.
+
+QA/Security:
+
+- `fattern`, `fattern estimate`, `fattern mcp-stdio`, Web UI upload를 모두 검증한다.
+- absolute path, `..`, 비 DXF 확장자, 대용량 업로드, zip slip 회귀를 테스트한다.
+- `marker_report.md`, `result.json`, `run_summary.txt` 숫자 일치를 검증한다.
+
+### v0.8.2 완료 기준
+
+- `fattern`만 실행해도 Web UI가 열린다.
+- 처음 실행하면 `input/`, `output/`, `config/`가 생성된다.
+- Web UI 첫 화면에 안내문과 질문지가 자동 표시된다.
+- Web UI 계산 결과가 `output/YYYYMMDD-HHMMSS_DXF이름/`에 저장된다.
+- output 폴더에 `result.json`, `marker_preview.svg`, `marker_report.md`, `marker_report.pdf`, `report.csv`, `run_summary.txt`가 있다.
+- MCP high-level 결과에 `web_url`, `preview_url`, `output_dir`가 포함된다.
+- README 첫 설치/실행 경로에서 개발자용 설명이 제거되어 있다.
+- CLI/MCP 기존 계약은 깨지지 않는다.
+- 전체 테스트가 통과한다.
+
+### v0.8.2 완료 항목
+
+- `fattern` 단독 실행 시 Web UI 서버와 브라우저 자동 오픈 경로 구현 완료.
+- `input/`, `output/`, `config/` 자동 생성과 `config/answers.json` starter 생성 완료.
+- Web UI 첫 화면 안내문과 질문지 자동 표시 완료.
+- Web UI/CLI/MCP run 결과를 `output/YYYYMMDD-HHMMSS_DXF이름/`에 저장 완료.
+- `result.json`, `marker_preview.svg`, `marker_report.md`, `marker_report.pdf`, `report.csv`, `run_summary.txt` 산출 완료.
+- MCP `estimate_workspace_dxf` 추가와 workspace-relative path containment 완료.
+- MCP high-level 결과에 `run_id`, `output_dir`, `web_url`, `preview_url`, `report_url` 추가 완료.
+- README 첫 화면을 일반 사용자용 설치/실행 중심으로 단순화 완료.
+
+## v0.8.3 목표: LLM 없는 Advisor와 MCP 자연어 UX 강화
+
+v0.8.3은 API 비용 없이도 Web UI에서 사용자가 막히지 않게 하는 단계다. 여기서 Advisor는 LLM 채팅창이 아니라 deterministic help panel이다.
+
+### v0.8.3 작업 후보
+
+- Web UI 오른쪽에 Advisor 패널 추가.
+- warning code별 쉬운 한국어 설명 추가.
+- blocker code별 해결 방법 추가.
+- `cuttable_width`, `seam_allowance`, `nap_direction`, `grainline_required`, `quote_yield` 도움말 추가.
+- MCP prompt `/fattern`, `/fattern-help`, `/fattern-estimate`를 Web UI 링크 흐름에 맞게 재작성.
+- Codex/Claude Code용 AGENTS/CLAUDE 예시 문서 추가.
+
+병렬 작업:
+
+| 작업 ID | 파트 | 담당 역할 | 내용 |
+|---|---|---|---|
+| B1 | Advisor copy | Domain/UX | warning/blocker 한국어 설명 작성 |
+| B2 | Web UI | Frontend/Web engineer | Advisor 패널과 상태별 메시지 표시 |
+| B3 | MCP prompts | MCP/Agent engineer | slash prompt와 tool call 순서 개선 |
+| B4 | Docs | Technical writer | Codex/Claude Code 사용 예시 문서화 |
+| B5 | QA | QA engineer | blocker/warning별 화면 문구 스냅샷 검증 |
+
+### v0.8.3 완료 항목
+
+- Web UI Advisor 패널 추가 완료.
+- warning/blocker code별 deterministic 설명과 해결 문구 추가 완료.
+- `cuttable_width`, `seam_allowance`, `nap_direction`, `grainline_required`, `quote_yield` 도움말 추가 완료.
+- MCP prompt를 workspace path와 Web UI URL 반환 흐름에 맞게 수정 완료.
+- Codex/Claude Code 사용 예시는 `docs/ai-clients.md`로 문서화 완료.
+
+## v0.8.4 목표: 선택형 LLM Advisor
+
+v0.8.4는 API key가 있는 환경에서만 Web UI에 LLM Advisor를 붙이는 단계다. 일반 사용자는 LLM 없이도 계산할 수 있어야 하고, LLM은 부가 기능이어야 한다.
+
+### v0.8.4 원칙
+
+- 브라우저에 OpenAI/Anthropic API key를 노출하지 않는다.
+- API key는 서버 환경변수에서만 읽는다.
+- LLM에는 원본 DXF 전체를 기본 전송하지 않는다.
+- LLM에는 `result.json`, warning/error code, report summary 중심으로 전달한다.
+- LLM은 shell, arbitrary file read, arbitrary network access를 갖지 않는다.
+- LLM tool은 Fattern whitelist만 호출한다.
+
+### v0.8.4 병렬 작업
+
+| 작업 ID | 파트 | 담당 역할 | 내용 |
+|---|---|---|---|
+| C1 | LLM Backend | Backend/LLM engineer | provider adapter 구조 설계, OpenAI 우선 |
+| C2 | Web UI | Frontend/Web engineer | Advisor chat panel, streaming 표시, disabled state |
+| C3 | Tool Policy | Security engineer | LLM tool whitelist와 prompt injection guardrail |
+| C4 | Cost Control | Product/backend | 사용량 제한, rate limit, 로그 마스킹 |
+| C5 | Docs | Technical writer | BYOK/hosted/server env 차이 문서화 |
+| C6 | QA/Security | QA engineer | API key 미노출, 원본 DXF 미전송, prompt injection 테스트 |
+
+### v0.8.4 완료 항목
+
+- 서버 환경변수 기반 선택형 LLM Advisor adapter 추가 완료.
+- OpenAI Responses API와 Anthropic Messages API provider adapter 추가 완료.
+- 브라우저에는 API key를 노출하지 않고 `/advisor` 서버 endpoint에서만 호출하도록 구현 완료.
+- LLM context는 `layout`, `minimum_yield`, `quote_yield`, `allowance_breakdown`, `confidence`, warning/error 중심으로 sanitize 완료.
+- 원본 DXF bytes, artifact ID, local output path는 LLM context에서 제외 완료.
+- LLM에는 shell/file/network tool을 주지 않고 고정 provider endpoint 호출만 허용 완료.
+
+## v0.9.0 목표: Hosted Web UI와 Remote MCP 준비
+
+v0.9.0은 로컬 설치가 어려운 사용자를 위한 hosted Web UI와, ChatGPT/Claude.ai 같은 remote MCP connector 가능성을 검토하는 단계다.
+
+### v0.9.0 후보 작업
+
+- hosted Web UI 배포 구조 설계.
+- 사용자 계정, 프로젝트, 파일 보존 정책 설계.
+- 원본 DXF 보관 여부와 삭제 정책 명시.
+- remote MCP endpoint 설계.
+- 인증/OAuth/API key 정책 검토.
+- 사용량 제한과 과금 모델 검토.
+- 기업용 BYOK 옵션 검토.
+
+### v0.9.0 보류 조건
+
+- 로컬 Web UI + MCP 투트랙이 먼저 안정화되어야 한다.
+- API 비용과 개인정보/도면 보안 정책이 확정되어야 한다.
+- remote MCP는 로컬 MCP보다 보안 범위가 넓으므로 별도 threat model이 필요하다.
+
 ## Nesting 로드맵
 
 v0.5와 v0.6에서는 큰 nesting 알고리즘 교체보다 도메인 모델 정리를 우선한다.
@@ -560,17 +855,35 @@ no-overlap validation 캐싱:
 
 ## 우선순위
 
+완료된 우선순위:
+
 1. 고수준 `calculate_marker_yield` tool (완료)
 2. CLI를 `calculate_marker_yield` 입력 shape로 통합하고 `answers.json` canonical schema 작성 (완료)
 3. `nap_direction=one_way`에서 grainline 정책 enforcement 보완 (완료)
-4. schema 정교화 (완료: v0.7.0 범위의 schema/test 동기화 완료. 새 조건 추가 시 재동기화 필수)
+4. schema 정교화 (완료: v0.7.0-v0.8.4 범위의 schema/test 동기화 완료. 새 조건 추가 시 재동기화 필수)
 5. `cuttable_width`, `size_ratio`, `piece_quantity`, `spacing`, `nap_direction` (완료)
 6. 식서 blocker 정책 강화 (완료: 단, 자동 감지는 low-confidence guardrail 유지)
 7. CSV 출력 (완료: placement-level + explicit piece metadata + piece-level grainline status)
 8. AAMA/ASTM 의미 인식 (부분 완료: low-confidence numeric layer candidate, 근거 불충분 warning, layer audit 제공)
 9. PDF 출력 (완료: 단일 페이지 report PDF)
-10. README 빠른 이해와 설치 방법 정리 (완료)
-11. repository hygiene와 계약 검수 (완료)
+10. 견적용 `minimum_yield`/`quote_yield` 분리 (완료)
+11. 로컬 Web UI 1차 추가 (완료)
+12. `fattern` 기본 실행 Web UI 자동 오픈 (완료)
+13. `input/`, `output/`, `config/` 폴더 자동 생성 (완료)
+14. Web UI 첫 화면 안내문과 질문지 자동 표시 (완료)
+15. Web UI/CLI/MCP 결과를 `output/run_id/`에 정리 저장 (완료)
+16. MCP high-level 결과에 `web_url`, `preview_url`, `output_dir` 포함 (완료)
+17. workspace-relative DXF path tool 추가 (완료)
+18. README 첫 화면 일반 사용자용 한 줄 설치/실행 중심 정리 (완료)
+19. LLM 없는 deterministic Advisor 패널 추가 (완료)
+20. API key가 있는 환경에서만 선택형 LLM Advisor 추가 (완료)
+21. repository hygiene와 계약 검수 (완료)
+
+다음 우선순위:
+
+1. hosted Web UI와 remote MCP는 로컬 투트랙 안정화 이후 검토한다.
+2. LLM Advisor streaming, rate limit, audit log masking을 제품 운영 요구에 맞게 확장한다.
+3. buyer/vendor별 allowance preset과 costing은 v0.9 이후로 다룬다.
 
 ## 주요 리스크
 
@@ -579,6 +892,9 @@ no-overlap validation 캐싱:
 - seam allowance 자동 인식은 아직 하지 않는다. 현재는 `included`/`excluded`와 fallback rough 확장만 완료 상태다.
 - nesting 고도화는 시간이 많이 든다.
 - 사용자가 결과를 생산용 확정 요척으로 오해하면 제품 리스크가 크다.
+- Web UI에 LLM을 직접 붙일 경우 API 비용, key 보안, 원본 DXF 유출 리스크가 있다. LLM Advisor는 선택형으로 두고 서버 환경변수 기반 key 관리가 필요하다.
+- MCP workspace-relative path tool은 접근성을 올리지만 local file read 공격면을 넓힐 수 있다. absolute path, `..`, 비 DXF 확장자, workspace 밖 접근은 차단해야 한다.
+- Web UI와 MCP가 서로 다른 artifact 저장 경로를 쓰면 사용자와 AI가 다른 결과를 보게 된다. run registry와 output 계약을 하나로 고정해야 한다.
 - piece pairing, fold piece, stripe/plaid matching, bundle/section 배치는 v1.0 이후 별도 범위다.
 - plotter용 multi-page PDF는 PDF report 이후 별도 범위다.
 
@@ -597,19 +913,21 @@ report에는 아래 의미가 드러나야 한다.
 
 ## 실행 결론
 
-v0.8.1 기준으로 방향은 **Web UI 접근성 + 고수준 tool + schema + 조건 엔진 + 리포트 계약 + 견적용 quote layer**를 먼저 닫는 쪽이다. nesting 알고리즘 경쟁은 후순위다.
+v0.8.4 기준으로 **일반 사용자용 Web UI + AI 사용자용 MCP 투트랙 + 같은 output/run 계약 + 선택형 Advisor**는 닫힌 상태다. nesting 알고리즘 경쟁과 hosted remote MCP는 후순위다.
 
-현재 제품 계약은 Codex, Claude Code, CLI, MCP 모두에서 아래 흐름으로 고정한다.
+현재 제품 계약은 Web UI, Codex, Claude Code, CLI, MCP 모두에서 아래 흐름으로 고정한다.
 
 ```text
-Web UI 또는 slash 안내 또는 질문지 답변 + DXF
+Web UI 업로드 또는 MCP workspace path 또는 질문지 답변 + DXF
   -> calculate_marker_yield
   -> deterministic engine
   -> minimum_yield
   -> quote layer allowance_policy
   -> quote_yield + confidence
-  -> JSON/SVG/CSV/Markdown/PDF output
+  -> output/run_id
+  -> JSON/SVG/CSV/Markdown/PDF/run_summary output
+  -> Web UI result URL
   -> optional export_artifacts zip
 ```
 
-MCP에서는 자동 팝업 질문지를 강제하지 않는다. 서버는 `prompts/list`/`prompts/get`으로 `/fattern`, `/fattern-help`, `/fattern-estimate`에 해당하는 start guide를 제공하고, host AI가 그 안내에 따라 누락값만 묻는다. (완료)
+MCP에서는 자동 팝업 질문지를 강제하지 않는다. 서버는 `prompts/list`/`prompts/get`으로 `/fattern`, `/fattern-help`, `/fattern-estimate`에 해당하는 start guide를 제공하고, host AI가 그 안내에 따라 누락값만 묻는다. Web UI는 반대로 첫 화면에 질문지를 자동 표시한다.
