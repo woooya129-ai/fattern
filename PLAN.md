@@ -27,7 +27,7 @@ Engine은 계산 주체다. DXF/AAMA/ASTM 파싱, polygon 추출, grainline, sea
 - run 저장 계약: Web UI/CLI/MCP high-level 결과를 `output/run_id/`로 저장하고 `run_summary.txt`, `web_url`, `preview_url`, `report_url`을 노출 완료.
 - Advisor: LLM 없는 deterministic Advisor와 선택형 서버-side LLM Advisor 추가 완료.
 - 계약 정리: LLM-facing schema, MCP tool schema, README 예시, 테스트 계약 동기화 완료.
-- 검수 기준: `python -m unittest discover -s tests` 기준 169 tests OK, 1 skipped.
+- 검수 기준: `python -m unittest discover -s tests` 기준 181 tests OK, 1 skipped.
 
 ## 역할 경계
 

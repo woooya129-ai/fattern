@@ -4,9 +4,7 @@ from __future__ import annotations
 
 import argparse
 from base64 import b64encode
-from datetime import datetime
 import json
-import shutil
 import sys
 from pathlib import Path
 from typing import Any, Sequence
@@ -292,35 +290,6 @@ def _answer_value(cli_value: Any, answers: dict[str, Any], *keys: str) -> Any:
     return None
 
 
-def _copy_artifacts(store: JobStore, result: dict, output_dir: Path) -> dict[str, Path]:
-    artifact_ids = _artifact_ids_for_cli(result)
-    written: dict[str, Path] = {}
-    for name, artifact_id in artifact_ids.items():
-        artifact = store.get_artifact(result["job_id"], artifact_id)
-        destination = output_dir / artifact.file_name
-        shutil.copyfile(artifact.path, destination)
-        written[name] = destination
-    return written
-
-
-def _create_run_output_dir(output_root: Path, dxf_path: Path) -> Path:
-    safe_stem = _safe_output_name(dxf_path.stem)
-    timestamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    base = output_root / f"{timestamp}_{safe_stem}"
-    candidate = base
-    suffix = 2
-    while candidate.exists():
-        candidate = output_root / f"{timestamp}_{safe_stem}-{suffix}"
-        suffix += 1
-    candidate.mkdir(parents=True, exist_ok=False)
-    return candidate
-
-
-def _safe_output_name(value: str) -> str:
-    cleaned = "".join(char if char.isalnum() or char in {"-", "_"} else "_" for char in value.strip())
-    return cleaned[:80] or "dxf"
-
-
 def _public_result(result: dict) -> dict:
     public = {
         "status": result.get("status", "blocked" if result.get("errors") else "error"),
@@ -337,26 +306,6 @@ def _public_result(result: dict) -> dict:
     if "unit_scale" in result:
         public["unit_scale"] = result["unit_scale"]
     return public
-
-
-def _artifact_ids_for_cli(result: dict[str, Any]) -> dict[str, str]:
-    artifact_ids = result.get("artifact_ids", {})
-    if isinstance(artifact_ids, dict):
-        mapping = {
-            "result": artifact_ids.get("result_json"),
-            "svg": artifact_ids.get("marker_preview_svg"),
-            "report": artifact_ids.get("marker_report_md"),
-            "pdf": artifact_ids.get("marker_report_pdf"),
-            "csv": artifact_ids.get("report_csv"),
-        }
-        selected = {name: artifact_id for name, artifact_id in mapping.items() if isinstance(artifact_id, str)}
-        if selected:
-            return selected
-
-    return {
-        "svg": result["svg_artifact_id"],
-        "report": result["report_artifact_id"],
-    }
 
 
 def _marker_request_options(
