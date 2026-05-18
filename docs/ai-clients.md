@@ -70,6 +70,32 @@ unit: cm
 
 Use `register_input_file` when the MCP client provides file bytes directly or when remote MCP cannot read the local workspace.
 
+## Remote MCP Preparation
+
+v0.9.0 exposes a hosted-prep endpoint when the server is started with:
+
+```powershell
+fattern host --host 127.0.0.1 --port 8765
+```
+
+Remote endpoint:
+
+```text
+http://127.0.0.1:8765/mcp
+```
+
+For public hosting, set `FATTERN_REMOTE_MCP_TOKEN` and `FATTERN_PUBLIC_BASE_URL`.
+
+Remote MCP mode intentionally hides `estimate_workspace_dxf` because a hosted server must not read arbitrary local workspace paths from a cloud client. Use this order instead:
+
+```text
+create_job
+register_input_file
+calculate_marker_yield
+```
+
+The endpoint is HTTP JSON-RPC preparation for Streamable HTTP clients. SSE streaming and production OAuth connector metadata are not implemented in v0.9.0.
+
 ## Result Contract
 
 High-level results should include:

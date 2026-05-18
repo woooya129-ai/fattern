@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 from base64 import b64encode
 import json
+import os
 import sys
 from pathlib import Path
 from typing import Any, Sequence
@@ -35,6 +36,21 @@ def main(argv: Sequence[str] | None = None) -> int:
     if args.command == "ui":
         ensure_workspace_dirs()
         return serve_web_ui(host=args.host, port=args.port, open_browser=args.open_browser)
+    if args.command == "host":
+        ensure_workspace_dirs()
+        try:
+            return serve_web_ui(
+                host=args.host,
+                port=args.port,
+                open_browser=args.open_browser,
+                remote_mcp=True,
+                remote_mcp_token=args.bearer_token or os.environ.get("FATTERN_REMOTE_MCP_TOKEN"),
+                public_base_url=args.public_base_url or os.environ.get("FATTERN_PUBLIC_BASE_URL"),
+                allowed_origins=tuple(args.allowed_origin or []),
+            )
+        except ValueError as exc:
+            print(json.dumps({"status": "error", "message": str(exc)}, ensure_ascii=False), file=sys.stderr)
+            return 2
     parser.print_help()
     return 2
 
@@ -109,6 +125,26 @@ def _build_parser() -> argparse.ArgumentParser:
     ui.add_argument("--host", default=DEFAULT_HOST, help=f"Bind host. Default: {DEFAULT_HOST}.")
     ui.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"Bind port. Default: {DEFAULT_PORT}.")
     ui.add_argument("--open-browser", action="store_true", help="Open the UI in the default browser.")
+    host = subparsers.add_parser("host", help="Run hosted-prep Web UI with a remote MCP HTTP endpoint.")
+    host.add_argument("--host", default=DEFAULT_HOST, help=f"Bind host. Default: {DEFAULT_HOST}.")
+    host.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"Bind port. Default: {DEFAULT_PORT}.")
+    host.add_argument("--open-browser", action="store_true", help="Open the UI in the default browser.")
+    host.add_argument(
+        "--bearer-token",
+        default=None,
+        help="Bearer token for /mcp. Defaults to FATTERN_REMOTE_MCP_TOKEN.",
+    )
+    host.add_argument(
+        "--public-base-url",
+        default=None,
+        help="Public URL used in run links and server manifest. Defaults to FATTERN_PUBLIC_BASE_URL or request host.",
+    )
+    host.add_argument(
+        "--allowed-origin",
+        action="append",
+        default=[],
+        help="Allowed browser Origin for /mcp. Can be passed multiple times.",
+    )
     return parser
 
 

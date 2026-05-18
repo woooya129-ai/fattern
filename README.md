@@ -2,7 +2,7 @@
 
 [English](README.en.md)
 
-현재 버전: **0.8.4**
+현재 버전: **0.9.0**
 
 Fattern은 DXF 패턴으로 rough marker와 견적용 가요척을 계산하는 도구다. 계산은 deterministic engine이 하고, Web UI와 MCP는 접근 방식만 다르다.
 
@@ -117,6 +117,32 @@ Codex 또는 Claude Code
 
 MCP high-level 결과에는 `run_id`, `output_dir`, `web_url`, `preview_url`, `report_url`이 포함된다.
 
+## Hosted Web UI + Remote MCP 준비
+
+v0.9.0에는 hosted 준비용 실행 모드가 있다.
+
+```powershell
+fattern host --host 127.0.0.1 --port 8765
+```
+
+이 모드는 같은 Web UI 서버에 아래 endpoint를 연다.
+
+- `/mcp`: Remote MCP 준비용 HTTP JSON-RPC endpoint
+- `/hosting/policy`: 업로드, 보관, 인증, 보안 정책 JSON
+- `/server.json`: future MCP registry/package manifest 초안
+- `/healthz`: 헬스체크
+
+외부 공개 바인딩은 bearer token이 필요하다.
+
+```powershell
+$env:FATTERN_REMOTE_MCP_TOKEN = "change-me"
+fattern host --host 0.0.0.0 --public-base-url https://example.com
+```
+
+v0.9.0의 `/mcp`는 production OAuth connector가 아니라 준비 단계다. OAuth 2.1 protected-resource metadata, 계정/프로젝트 격리, retention job, quota는 아직 보류다.
+
+자세한 내용은 [Hosted Web UI and Remote MCP](docs/hosting.md)를 본다.
+
 ## Advisor
 
 Web UI에는 LLM 없이도 동작하는 Advisor가 있다.
@@ -166,6 +192,7 @@ workspace 안 DXF는 `estimate_workspace_dxf`를 우선 사용한다. 첨부 파
 - rough marker layout
 - `minimum_yield`와 `quote_yield` 분리
 - Web UI, CLI, MCP
+- hosted-prep Web UI + Remote MCP HTTP endpoint
 
 아직 상용 marker CAD 수준은 아니다.
 

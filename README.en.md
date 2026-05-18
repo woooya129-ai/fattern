@@ -2,7 +2,7 @@
 
 [한국어](README.md)
 
-Current version: **0.8.4**
+Current version: **0.9.0**
 
 Fattern estimates rough marker yield and quotation yield from DXF pattern files. The deterministic engine does the calculation; the Web UI and MCP are access layers.
 
@@ -117,6 +117,32 @@ Codex or Claude Code
 
 High-level MCP results include `run_id`, `output_dir`, `web_url`, `preview_url`, and `report_url`.
 
+## Hosted Web UI + Remote MCP Prep
+
+v0.9.0 adds a hosted-prep run mode.
+
+```powershell
+fattern host --host 127.0.0.1 --port 8765
+```
+
+This serves the Web UI plus:
+
+- `/mcp`: remote-MCP-prep HTTP JSON-RPC endpoint
+- `/hosting/policy`: upload, retention, auth, and security policy JSON
+- `/server.json`: draft manifest for future MCP registry/package work
+- `/healthz`: health check
+
+Public binds require a bearer token.
+
+```powershell
+$env:FATTERN_REMOTE_MCP_TOKEN = "change-me"
+fattern host --host 0.0.0.0 --public-base-url https://example.com
+```
+
+The v0.9.0 `/mcp` endpoint is preparation work, not a production OAuth connector. OAuth 2.1 protected-resource metadata, account/project isolation, retention jobs, and quota enforcement are still pending.
+
+See [Hosted Web UI and Remote MCP](docs/hosting.md).
+
 ## Advisor
 
 The Web UI includes a deterministic Advisor that works without an LLM.
@@ -166,6 +192,7 @@ Currently supported:
 - rough marker layout
 - separated `minimum_yield` and `quote_yield`
 - Web UI, CLI, MCP
+- hosted-prep Web UI + Remote MCP HTTP endpoint
 
 Not a commercial marker CAD replacement:
 

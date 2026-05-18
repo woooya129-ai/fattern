@@ -72,6 +72,39 @@ Default rotation is 0 only. Do not rotate grainline-sensitive patterns unless th
 After a successful high-level call, give the user the web_url so they can inspect the marker preview in the Web UI.
 """
 
+FATTERN_REMOTE_GUIDE_PROMPT = """Fattern Remote MCP guide.
+
+This remote MCP surface cannot read the user's local workspace paths.
+
+Rules:
+- Do not call estimate_workspace_dxf; it is disabled on remote MCP.
+- Use create_job -> register_input_file -> calculate_marker_yield.
+- register_input_file.content_base64 is JSON transport encoding for DXF bytes, not encryption.
+- Required user decisions: fabric_width or cuttable_width, unit, seam_allowance status, nap_direction, grainline_required.
+- Optional quote decision: allowance_policy.mode can be fast_quote, sample_estimate, or bulk_precheck.
+- If seam_allowance.status is excluded and fallback_width is missing, Fattern applies the default 1/2 inch allowance: 12.7 mm, 1.27 cm, 0.5 inch.
+- calculate_marker_yield returns minimum_yield separately from quote_yield; do not call quote_yield a production-confirmed marker yield.
+- Stop when any tool returns a blocker error and explain the blocker before continuing.
+"""
+
+FATTERN_REMOTE_ESTIMATE_PROMPT = """Guide the user through a remote Fattern rough marker estimate.
+
+Collect only missing values:
+- DXF content to register with register_input_file
+- fabric_width or cuttable_width
+- unit
+- seam_allowance.status: included or excluded
+- nap_direction: one_way, two_way, none, no_nap, or not_one_way
+- grainline_required
+- allowance_policy.mode when the user wants a quote profile
+
+Remote order:
+1. create_job
+2. register_input_file
+3. calculate_marker_yield
+4. Explain minimum_yield, quote_yield, allowance_breakdown, confidence, and returned run links
+"""
+
 
 class FatternMcpServer:
     """Transport-neutral server facade for tools/list and tools/call."""
@@ -90,8 +123,12 @@ class FatternMcpServer:
 
     def prompts_get(self, name: str, arguments: dict[str, Any] | None = None) -> dict[str, Any]:
         if name in {"fattern", "fattern-help"}:
+            if not getattr(self.registry, "allow_workspace_paths", True):
+                return _prompt_response("Fattern Remote Guide", FATTERN_REMOTE_GUIDE_PROMPT)
             return _prompt_response("Fattern Guide", FATTERN_GUIDE_PROMPT)
         if name == "fattern-estimate":
+            if not getattr(self.registry, "allow_workspace_paths", True):
+                return _prompt_response("Remote Estimate Rough Marker", FATTERN_REMOTE_ESTIMATE_PROMPT)
             return _prompt_response("Estimate Rough Marker", FATTERN_ESTIMATE_PROMPT)
         raise KeyError(name)
 

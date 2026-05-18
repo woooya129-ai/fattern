@@ -47,12 +47,14 @@ class McpToolRegistry:
         output_root: Path | str | None = None,
         web_base_url: str | None = None,
         persist_runs: bool = False,
+        allow_workspace_paths: bool = True,
     ) -> None:
         self.store = store or JobStore()
         self.workspace_root = _default_workspace_root(workspace_root)
         self.output_root = Path(output_root) if output_root is not None else default_output_root()
         self.web_base_url = web_base_url if web_base_url is not None else default_web_base_url()
         self.persist_runs = persist_runs
+        self.allow_workspace_paths = allow_workspace_paths
         self._handlers: dict[str, Callable[[dict[str, Any]], ToolResponse]] = {
             "get_estimation_questionnaire": self._get_estimation_questionnaire,
             "create_job": self._create_job,
@@ -69,9 +71,17 @@ class McpToolRegistry:
         }
 
     def list_tools(self) -> list[dict]:
-        return list_tool_definitions()
+        tools = list_tool_definitions()
+        if not self.allow_workspace_paths:
+            tools = [tool for tool in tools if tool["name"] != "estimate_workspace_dxf"]
+        return tools
 
     def call_tool(self, name: str, arguments: dict[str, Any]) -> ToolResponse:
+        if name == "estimate_workspace_dxf" and not self.allow_workspace_paths:
+            return _error_response(
+                "WORKSPACE_PATHS_DISABLED",
+                "Workspace-relative path tools are disabled for this MCP surface.",
+            )
         handler = self._handlers.get(name)
         if handler is None:
             return _error_response("TOOL_NOT_FOUND", "Tool was not found.")

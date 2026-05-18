@@ -24,6 +24,7 @@ python -m fattern --help
 ```powershell
 fattern
 fattern ui --open-browser
+fattern host --host 127.0.0.1 --port 8765
 fattern estimate input\sample.dxf --fabric-width 150 --unit cm --seam-allowance-status included --nap-direction two_way --grainline-required no
 fattern mcp-stdio
 fattern-mcp
@@ -60,6 +61,35 @@ register_input_file
 ```
 
 The security boundary is path containment, opaque IDs, file type checks, upload size limits, and artifact allowlists.
+
+## Hosted-Prep Remote MCP
+
+`fattern host` runs the Web UI and enables `/mcp` on the same HTTP server.
+
+```powershell
+fattern host --host 127.0.0.1 --port 8765
+```
+
+For a public bind, set a token and public URL:
+
+```powershell
+$env:FATTERN_REMOTE_MCP_TOKEN = "change-me"
+$env:FATTERN_PUBLIC_BASE_URL = "https://example.com"
+fattern host --host 0.0.0.0 --port 8765
+```
+
+Remote MCP mode disables `estimate_workspace_dxf`. Use `register_input_file` for file bytes, then `calculate_marker_yield`.
+
+Useful endpoints:
+
+```text
+/mcp
+/hosting/policy
+/server.json
+/healthz
+```
+
+v0.9.0 does not implement production OAuth discovery or token validation. Treat bearer token mode as a deployment guard, not a full multi-user auth system.
 
 ## Optional LLM Advisor
 

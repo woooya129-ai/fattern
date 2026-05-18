@@ -11,13 +11,28 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import parse_qs, urlencode, urlparse
 import json
+import os
 import sys
 import webbrowser
 
 from fattern.advisor import build_advisor_state
+from fattern.hosting import (
+    HOSTING_POLICY_PATH,
+    MAX_REMOTE_MCP_BYTES,
+    REMOTE_MCP_PATH,
+    REMOTE_SERVER_MANIFEST_PATH,
+    build_hosting_policy,
+    build_remote_server_manifest,
+)
 from fattern.jobs import JobStore
 from fattern.llm import ask_llm_advisor, llm_status
 from fattern.mcp import McpToolRegistry
+from fattern.mcp.http import (
+    RemoteMcpHttpConfig,
+    build_remote_mcp_dispatcher,
+    send_mcp_get_not_supported,
+    send_mcp_post,
+)
 from fattern.runs import (
     RunRecord,
     default_output_root,
@@ -45,6 +60,15 @@ class WebEstimateResult:
     archive_artifact_id: str | None = None
 
 
+@dataclass
+class WebServerConfig:
+    output_root: Path
+    web_base_url: str
+    remote_mcp_enabled: bool = False
+    remote_mcp_token: str | None = None
+    allowed_origins: tuple[str, ...] = ()
+
+
 def serve_web_ui(
     *,
     host: str = DEFAULT_HOST,
@@ -52,15 +76,32 @@ def serve_web_ui(
     open_browser: bool = False,
     store: JobStore | None = None,
     output_root: Path | None = None,
+    remote_mcp: bool = False,
+    remote_mcp_token: str | None = None,
+    public_base_url: str | None = None,
+    allowed_origins: tuple[str, ...] = (),
 ) -> int:
     """Serve the local Web UI until interrupted."""
 
     ensure_workspace_dirs()
+    token = remote_mcp_token if remote_mcp_token is not None else os.environ.get("FATTERN_REMOTE_MCP_TOKEN")
+    if remote_mcp and _public_bind_host(host) and not token:
+        raise ValueError("Remote MCP on a public bind host requires FATTERN_REMOTE_MCP_TOKEN or --bearer-token.")
     active_store = store or JobStore()
     active_output_root = output_root or default_output_root()
-    server = ThreadingHTTPServer((host, port), _handler_class(active_store, active_output_root))
-    url = f"http://{host}:{server.server_port}/"
+    config = WebServerConfig(
+        output_root=active_output_root,
+        web_base_url=public_base_url or "",
+        remote_mcp_enabled=remote_mcp,
+        remote_mcp_token=token,
+        allowed_origins=allowed_origins,
+    )
+    server = ThreadingHTTPServer((host, port), _handler_class(active_store, config))
+    url = _base_url(host, server.server_port, public_base_url)
+    config.web_base_url = url
     print(f"Fattern Web UI: {url}", file=sys.stderr, flush=True)
+    if remote_mcp:
+        print(f"Fattern Remote MCP: {url.rstrip('/')}{REMOTE_MCP_PATH}", file=sys.stderr, flush=True)
     if open_browser:
         webbrowser.open(url)
     try:
@@ -146,12 +187,38 @@ def estimate_upload(
     return WebEstimateResult(result=persisted, run=run, archive_artifact_id=archive_artifact_id)
 
 
-def _handler_class(store: JobStore, output_root: Path) -> type[BaseHTTPRequestHandler]:
+def _handler_class(store: JobStore, config: WebServerConfig) -> type[BaseHTTPRequestHandler]:
     class FatternWebHandler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:  # noqa: N802
             parsed = urlparse(self.path)
             if parsed.path == "/":
                 self._send_html(_render_page())
+                return
+            if parsed.path == REMOTE_MCP_PATH:
+                if not config.remote_mcp_enabled:
+                    self.send_error(404)
+                    return
+                send_mcp_get_not_supported(self)
+                return
+            if parsed.path == HOSTING_POLICY_PATH:
+                self._send_json(
+                    build_hosting_policy(
+                        public_base_url=_request_base_url(self, config.web_base_url),
+                        remote_mcp_enabled=config.remote_mcp_enabled,
+                        auth_required=bool(config.remote_mcp_token),
+                        max_upload_bytes=MAX_FORM_BYTES,
+                        max_mcp_bytes=MAX_REMOTE_MCP_BYTES,
+                    )
+                )
+                return
+            if parsed.path == REMOTE_SERVER_MANIFEST_PATH:
+                if not config.remote_mcp_enabled:
+                    self.send_error(404)
+                    return
+                self._send_json(build_remote_server_manifest(public_base_url=_request_base_url(self, config.web_base_url)))
+                return
+            if parsed.path == "/healthz":
+                self._send_json({"status": "ok", "remote_mcp_enabled": config.remote_mcp_enabled})
                 return
             if parsed.path.startswith("/runs/"):
                 self._send_run(parsed.path)
@@ -163,6 +230,25 @@ def _handler_class(store: JobStore, output_root: Path) -> type[BaseHTTPRequestHa
 
         def do_POST(self) -> None:  # noqa: N802
             parsed_path = urlparse(self.path).path
+            if parsed_path == REMOTE_MCP_PATH:
+                if not config.remote_mcp_enabled:
+                    self.send_error(404)
+                    return
+                dispatcher = build_remote_mcp_dispatcher(
+                    store=store,
+                    output_root=config.output_root,
+                    web_base_url=_request_base_url(self, config.web_base_url),
+                    allow_workspace_paths=False,
+                )
+                send_mcp_post(
+                    self,
+                    dispatcher=dispatcher,
+                    config=RemoteMcpHttpConfig(
+                        bearer_token=config.remote_mcp_token,
+                        allowed_origins=config.allowed_origins,
+                    ),
+                )
+                return
             if parsed_path == "/advisor":
                 self._send_advisor()
                 return
@@ -171,13 +257,13 @@ def _handler_class(store: JobStore, output_root: Path) -> type[BaseHTTPRequestHa
                 return
             try:
                 fields, upload = _read_multipart(self)
-                base_url = f"http://{self.server.server_address[0]}:{self.server.server_address[1]}"
+                base_url = _request_base_url(self, config.web_base_url)
                 estimate = estimate_upload(
                     file_name=upload[0],
                     file_bytes=upload[1],
                     fields=fields,
                     store=store,
-                    output_root=output_root,
+                    output_root=config.output_root,
                     web_base_url=base_url,
                 )
                 self._send_html(_render_page(estimate))
@@ -191,6 +277,14 @@ def _handler_class(store: JobStore, output_root: Path) -> type[BaseHTTPRequestHa
             body = html.encode("utf-8")
             self.send_response(status)
             self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Length", str(len(body)))
+            self.end_headers()
+            self.wfile.write(body)
+
+        def _send_json(self, payload: dict[str, Any], *, status: int = 200) -> None:
+            body = json.dumps(payload, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode("utf-8")
+            self.send_response(status)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
@@ -214,7 +308,7 @@ def _handler_class(store: JobStore, output_root: Path) -> type[BaseHTTPRequestHa
             try:
                 if len(parts) == 2:
                     run_id = parts[1]
-                    result = load_run_result(run_id, output_root)
+                    result = load_run_result(run_id, config.output_root)
                     self._send_html(_render_run_page(run_id, result))
                     return
                 if len(parts) == 3:
@@ -227,7 +321,7 @@ def _handler_class(store: JobStore, output_root: Path) -> type[BaseHTTPRequestHa
             self.send_error(404)
 
         def _send_run_file(self, run_id: str, file_name: str) -> None:
-            path = resolve_run_file(run_id, file_name, output_root)
+            path = resolve_run_file(run_id, file_name, config.output_root)
             data = path.read_bytes()
             media_type = _media_type_for_file(path.name)
             disposition = "attachment" if path.suffix.lower() in {".zip", ".pdf", ".csv", ".json", ".txt"} else "inline"
@@ -243,13 +337,37 @@ def _handler_class(store: JobStore, output_root: Path) -> type[BaseHTTPRequestHa
                 fields = _read_urlencoded(self)
                 run_id = fields.get("run_id", "")
                 message = fields.get("message", "")
-                result = load_run_result(run_id, output_root)
+                result = load_run_result(run_id, config.output_root)
                 advisor_reply = ask_llm_advisor(user_message=message, result=result)
                 self._send_html(_render_run_page(run_id, result, advisor_reply=advisor_reply))
             except ValueError:
                 self.send_error(404)
 
     return FatternWebHandler
+
+
+def _public_bind_host(host: str) -> bool:
+    return host not in {"127.0.0.1", "localhost", "::1"}
+
+
+def _base_url(host: str, port: int, public_base_url: str | None) -> str:
+    if public_base_url:
+        return public_base_url.rstrip("/")
+    display_host = "127.0.0.1" if host in {"0.0.0.0", ""} else host
+    if ":" in display_host and not display_host.startswith("["):
+        display_host = f"[{display_host}]"
+    return f"http://{display_host}:{port}"
+
+
+def _request_base_url(handler: BaseHTTPRequestHandler, configured_base_url: str) -> str:
+    if configured_base_url:
+        return configured_base_url.rstrip("/")
+    host = handler.headers.get("Host")
+    if host:
+        scheme = "https" if handler.headers.get("X-Forwarded-Proto", "").lower() == "https" else "http"
+        return f"{scheme}://{host}".rstrip("/")
+    server_host, server_port = handler.server.server_address[:2]
+    return _base_url(str(server_host), int(server_port), None)
 
 
 def _render_page(

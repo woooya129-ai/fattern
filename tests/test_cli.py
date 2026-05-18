@@ -40,6 +40,56 @@ class FatternCliTests(unittest.TestCase):
         self.assertTrue((self.temp_dir / "config" / "answers.json").is_file())
         serve.assert_called_once_with(host="127.0.0.1", port=8765, open_browser=True)
 
+    def test_host_command_enables_remote_mcp(self) -> None:
+        previous = Path.cwd()
+        os.chdir(self.temp_dir)
+        try:
+            with mock.patch.dict(os.environ, {"FATTERN_REMOTE_MCP_TOKEN": "env-token"}, clear=False):
+                with mock.patch("fattern.cli.serve_web_ui", return_value=0) as serve:
+                    code = main(
+                        [
+                            "host",
+                            "--host",
+                            "127.0.0.1",
+                            "--port",
+                            "9999",
+                            "--public-base-url",
+                            "https://example.com",
+                            "--allowed-origin",
+                            "https://client.example.com",
+                        ]
+                    )
+        finally:
+            os.chdir(previous)
+
+        self.assertEqual(code, 0)
+        serve.assert_called_once_with(
+            host="127.0.0.1",
+            port=9999,
+            open_browser=False,
+            remote_mcp=True,
+            remote_mcp_token="env-token",
+            public_base_url="https://example.com",
+            allowed_origins=("https://client.example.com",),
+        )
+
+    def test_host_public_bind_requires_token(self) -> None:
+        previous = Path.cwd()
+        os.chdir(self.temp_dir)
+        stdout = io.StringIO()
+        stderr = io.StringIO()
+        try:
+            with mock.patch.dict(os.environ, {"FATTERN_REMOTE_MCP_TOKEN": ""}, clear=False):
+                with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                    code = main(["host", "--host", "0.0.0.0", "--port", "9999"])
+        finally:
+            os.chdir(previous)
+
+        self.assertEqual(code, 2)
+        response = json.loads(stderr.getvalue())
+        self.assertEqual(response["status"], "error")
+        self.assertIn("requires", response["message"])
+
     def test_estimate_writes_svg_and_report(self) -> None:
         output_dir = self.temp_dir / "out"
         stdout = io.StringIO()
