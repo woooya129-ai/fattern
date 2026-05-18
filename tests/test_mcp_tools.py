@@ -611,6 +611,14 @@ class McpToolTests(unittest.TestCase):
 
         self.assertEqual(response["errors"][0]["code"], "TOOL_VALIDATION_FAILED")
 
+    def test_calculate_marker_yield_rejects_zero_quote_rounding_unit(self) -> None:
+        response = self.registry.call_tool(
+            "calculate_marker_yield",
+            self._marker_yield_request(allowance_policy={"mode": "fast_quote", "rounding_unit": 0}),
+        )
+
+        self.assertEqual(response["errors"][0]["code"], "TOOL_VALIDATION_FAILED")
+
     def test_calculate_marker_yield_happy_path_returns_exportable_artifacts(self) -> None:
         job_id = self._create_job()
         file_id = self.store.register_input_file(
@@ -735,6 +743,49 @@ class McpToolTests(unittest.TestCase):
         ])
         self.assertEqual(len(rows), 2)
         self.assertEqual({row["quantity"] for row in rows}, {"1"})
+
+    def test_calculate_marker_yield_returns_quote_decision_layer(self) -> None:
+        job_id = self._create_job()
+        file_id = self.store.register_input_file(
+            job_id,
+            "sample.dxf",
+            (FIXTURE_DIR / "rectangle_lwpolyline.dxf").read_bytes(),
+        )
+
+        response = self.registry.call_tool(
+            "calculate_marker_yield",
+            self._marker_yield_request(
+                pattern_file_id=file_id,
+                size_ratio={},
+                allowance_policy={
+                    "mode": "fast_quote",
+                    "rounding_unit": 0.5,
+                    "base_buffer_percent": 10.0,
+                    "cutting_loss_percent": 0.0,
+                    "end_loss_length": 1.0,
+                    "fabric_defect_buffer_percent": 0.0,
+                    "unknown_risk_buffer_percent": 0.0,
+                    "apply_warning_penalty": False,
+                },
+            ),
+        )
+        report_artifact = self.store.get_artifact(job_id, response["artifact_ids"]["marker_report_md"])
+        report_text = report_artifact.path.read_text(encoding="utf-8")
+
+        self.assertEqual(response["status"], "completed")
+        self.assertEqual(response["minimum_yield"], {
+            "marker_length": 3.0,
+            "unit": "cm",
+            "source": "deterministic_marker_layout",
+        })
+        self.assertAlmostEqual(response["allowance_breakdown"]["base_buffer"], 0.3)
+        self.assertAlmostEqual(response["allowance_breakdown"]["end_loss"], 1.0)
+        self.assertAlmostEqual(response["allowance_breakdown"]["rounding"], 0.2)
+        self.assertAlmostEqual(response["quote_yield"]["final_yield"], 4.5)
+        self.assertEqual(response["quote_yield"]["rounding_rule"], "round_up_0.5cm")
+        self.assertEqual(response["confidence"]["grade"], "B")
+        self.assertIn("## Quote Summary", report_text)
+        self.assertIn("- quote_yield: 4.5 cm", report_text)
 
     def test_calculate_marker_yield_stops_on_blocker_without_following_tools(self) -> None:
         job_id = self._create_job()

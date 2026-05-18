@@ -49,6 +49,7 @@ QUESTIONNAIRE_FIELDS = (
     "fabric_type",
     "stretch_direction",
     "seam_allowance",
+    "allowance_policy",
 )
 
 

@@ -512,6 +512,52 @@
               "default": null
             }
           }
+        },
+        "allowance_policy": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "mode": {
+              "type": "string",
+              "enum": ["fast_quote", "sample_estimate", "bulk_precheck"],
+              "default": "fast_quote"
+            },
+            "rounding_unit": {
+              "type": ["number", "null"],
+              "exclusiveMinimum": 0,
+              "default": null
+            },
+            "base_buffer_percent": {
+              "type": ["number", "null"],
+              "minimum": 0,
+              "default": null
+            },
+            "cutting_loss_percent": {
+              "type": ["number", "null"],
+              "minimum": 0,
+              "default": null
+            },
+            "end_loss_length": {
+              "type": ["number", "null"],
+              "minimum": 0,
+              "default": null
+            },
+            "fabric_defect_buffer_percent": {
+              "type": ["number", "null"],
+              "minimum": 0,
+              "default": null
+            },
+            "unknown_risk_buffer_percent": {
+              "type": ["number", "null"],
+              "minimum": 0,
+              "default": null
+            },
+            "apply_warning_penalty": {
+              "type": "boolean",
+              "default": true
+            }
+          },
+          "default": {}
         }
       }
     }

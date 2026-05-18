@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
+from typing import Any
 
 from fattern.engine import EngineMessage, ExcludedCandidate, LayoutResult
 
@@ -24,6 +25,7 @@ def render_marker_report(
     warnings: Sequence[EngineMessage] | None = None,
     excluded_pieces: Sequence[ExcludedReportItem] = (),
     csv_partial_fields: Sequence[str] | None = None,
+    quote_decision: Mapping[str, Any] | None = None,
 ) -> str:
     """Render a Markdown report from LayoutResult and optional report lists."""
 
@@ -47,9 +49,12 @@ def render_marker_report(
         f"- no_overlap: {_bool(result.no_overlap)}",
         f"- within_fabric_width: {_bool(result.within_fabric_width)}",
         "",
-        "## Placements",
-        "",
     ]
+
+    if quote_decision is not None:
+        lines.extend(_quote_lines(quote_decision, result.unit))
+
+    lines.extend(["## Placements", ""])
 
     if result.placements:
         lines.append("| piece_id | layer | x | y | width | height | rotation_degrees |")
@@ -131,6 +136,55 @@ def escape_markdown(value: object) -> str:
 
 def escape_code(value: object) -> str:
     return str(value).replace("`", "").replace("\n", " ").replace("\r", " ")
+
+
+def _quote_lines(quote_decision: Mapping[str, Any], unit: str) -> list[str]:
+    minimum_yield = _mapping(quote_decision.get("minimum_yield"))
+    quote_yield = _mapping(quote_decision.get("quote_yield"))
+    confidence = _mapping(quote_decision.get("confidence"))
+    breakdown = _mapping(quote_decision.get("allowance_breakdown"))
+    reasons = _mapping(quote_decision.get("allowance_reasons"))
+    output_unit = str(minimum_yield.get("unit") or unit)
+
+    lines = [
+        "## Quote Summary",
+        "",
+        f"- minimum_yield: {_fmt_number(minimum_yield.get('marker_length'))} {escape_markdown(output_unit)}",
+        f"- quote_yield: {_fmt_number(quote_yield.get('final_yield'))} {escape_markdown(output_unit)}",
+        f"- allowance_total: {_fmt_number(quote_yield.get('allowance_total'))} {escape_markdown(output_unit)}",
+        f"- allowance_rate: {_fmt_number(quote_yield.get('allowance_rate_percent'))}%",
+        f"- confidence_grade: {escape_markdown(confidence.get('grade', 'unknown'))}",
+        f"- recommended_use: {escape_markdown(quote_yield.get('recommended_use', 'fast quote only'))}",
+        "",
+        "This is a quotation yield, not a production-confirmed marker yield.",
+        "",
+        "## Allowance Breakdown",
+        "",
+    ]
+    if breakdown:
+        lines.append("| item | value | reason |")
+        lines.append("| --- | ---: | --- |")
+        for item, value in breakdown.items():
+            lines.append(
+                "| "
+                f"{escape_markdown(item)} | "
+                f"{_fmt_number(value)} {escape_markdown(output_unit)} | "
+                f"{escape_markdown(reasons.get(item, ''))} |"
+            )
+    else:
+        lines.append("- none")
+    lines.append("")
+    return lines
+
+
+def _mapping(value: object) -> Mapping[str, Any]:
+    return value if isinstance(value, Mapping) else {}
+
+
+def _fmt_number(value: object) -> str:
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return _fmt(float(value))
+    return "0"
 
 
 def _excluded_piece_id(item: ExcludedReportItem) -> str:

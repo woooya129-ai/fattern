@@ -25,6 +25,7 @@ from fattern.engine import (
 from fattern.geometry import BoundingBox
 from fattern.engine.metrics import calculate_piece_set_metrics
 from fattern.jobs import JobError, JobStore, SecurityError
+from fattern.quote import build_quote_decision
 from fattern.report import PieceReportMetadata, partial_csv_fields, render_marker_csv, render_marker_pdf, render_marker_report
 from fattern.render import render_marker_svg
 
@@ -468,12 +469,19 @@ class McpToolRegistry:
                 )
             ],
         )
+        quote_decision = build_quote_decision(
+            marker_length=layout_result.marker_length,
+            unit=layout_result.unit,
+            allowance_policy=arguments.get("allowance_policy"),
+            warnings=warnings,
+        )
 
         report_text = render_marker_report(
             layout_result,
             warnings=_engine_warnings(warnings),
             excluded_pieces=parse_result.excluded_candidates,
             csv_partial_fields=csv_partial,
+            quote_decision=quote_decision,
         )
         report_artifact_id = self.store.register_artifact(
             job_id,
@@ -515,6 +523,12 @@ class McpToolRegistry:
             "dxf_unit": metrics_response.get("dxf_unit"),
             "unit_scale": metrics_response.get("unit_scale"),
             "layout": _public_layout(layout_response),
+            "minimum_yield": quote_decision["minimum_yield"],
+            "quote_yield": quote_decision["quote_yield"],
+            "allowance_breakdown": quote_decision["allowance_breakdown"],
+            "allowance_reasons": quote_decision["allowance_reasons"],
+            "allowance_policy": quote_decision["allowance_policy"],
+            "confidence": quote_decision["confidence"],
             "partial_csv_fields": csv_partial,
             "artifact_ids": {
                 "marker_preview_svg": render_response["artifact_id"],

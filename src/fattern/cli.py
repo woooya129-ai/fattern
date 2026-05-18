@@ -379,6 +379,7 @@ def _marker_request_options(
         "fabric_type": fabric_type,
         "stretch_direction": stretch_direction,
         "seam_allowance": seam_allowance,
+        "allowance_policy": answers.get("allowance_policy"),
     }
 
 
@@ -394,6 +395,8 @@ def _marker_yield_request(pattern_file_id: str, options: dict[str, Any]) -> dict
         request.pop("shrinkage")
     if request.get("stretch_direction") is None:
         request.pop("stretch_direction")
+    if request.get("allowance_policy") is None:
+        request.pop("allowance_policy")
     return request
 
 

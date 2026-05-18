@@ -6,16 +6,16 @@ A CLI/MCP tool for fast rough marker-yield estimation from DXF garment pattern f
 
 Fattern means **FAST + PATTERN = FATTERN**.
 
-Current version: **0.7.1**
+Current version: **0.8.0**
 
 This repository is **source-available, noncommercial use only** under **PolyForm Noncommercial License 1.0.0 + a separate Commercial License**.
 
 ## Quick Understanding
 
-- Fattern is not an LLM calculator. It is a **DXF-based deterministic marker yield engine**.
-- Inputs are a DXF pattern and fabric conditions. Outputs are rough marker estimate artifacts.
+- Fattern is not an LLM calculator. It is a **DXF-based deterministic marker yield engine + quote-yield decision layer**.
+- Inputs are a DXF pattern, fabric conditions, and optional quote allowance policy. Outputs separate minimum yield from quotation yield.
 - Main artifacts are `result.json`, `marker_preview.svg`, `marker_report.md`, `marker_report.pdf`, and `report.csv`.
-- v0.7.1 supports CSV/PDF reports, canonical `answers.json`, the high-level MCP tool `calculate_marker_yield`, and legacy DXF fallbacks.
+- v0.8.0 returns `minimum_yield`, `quote_yield`, `allowance_breakdown`, and `confidence` through the high-level MCP tool `calculate_marker_yield` and reports.
 - It is not a production final-yield system or a replacement for commercial CAD nesting.
 
 ## Installation
@@ -56,7 +56,7 @@ The easiest workflow is the `input/` folder workflow.
 
 Read the outputs in this order:
 
-1. `marker_report.md`: human-readable summary with fabric width, marker length, efficiency, and warnings.
+1. `marker_report.md`: human-readable summary with minimum yield, quote yield, allowance breakdown, and warnings.
 2. `marker_preview.svg`: visual marker preview. Check width overflow and rotations.
 3. `report.csv`: per-piece coordinates and rotations for spreadsheets or downstream automation.
 4. `result.json`: tool-chain result for MCP, Codex, Claude Code, or scripts.
@@ -64,7 +64,7 @@ Read the outputs in this order:
 
 When DXF layers are unclear, inspect `layer_audit` from `parse_dxf` or `extract_pattern_pieces`. It shows entity counts by layer, grainline candidate source, confidence, and mapping status. Numeric layer `7` remains an AAMA/ASTM candidate only; Fattern does not treat it as a verified CAD vendor mapping.
 
-Layout still uses the existing BLF + beam-search structure. v0.7.1 adds shelf compaction, a longest-edge-down attempt, and overlap geometry caching for better small-case packing and fewer repeated collision calculations. This is still not commercial CAD-grade final nesting.
+Layout still uses the existing BLF + beam-search structure. In v0.8.0, the marker engine produces the minimum requirement and the quote layer separately adds practical allowance and confidence. This is still not commercial CAD-grade final nesting.
 
 ## One-Line Use
 
@@ -120,7 +120,8 @@ python -m fattern questionnaire
   "nap_direction": "two_way",
   "shrinkage_percent": 0,
   "fabric_type": "unknown",
-  "seam_allowance": {"status": "included"}
+  "seam_allowance": {"status": "included"},
+  "allowance_policy": {"mode": "fast_quote"}
 }
 ```
 
@@ -163,6 +164,35 @@ Run python -m fattern estimate using the DXF and answers.json in input/, then su
 - `fabric_type`: `woven`, `knit`, or `unknown`
 - `stretch_direction`: knit stretch direction
 - `seam_allowance`: seam allowance status object
+- `allowance_policy`: quote allowance policy, `fast_quote`, `sample_estimate`, or `bulk_precheck`
+
+## Minimum Yield And Quote Yield
+
+Starting in v0.8.0, `calculate_marker_yield` separates the engine result from the quotation result.
+
+```text
+minimum_yield = minimum requirement from deterministic marker layout
+quote_yield = minimum_yield plus practical allowance from allowance_policy
+```
+
+The default `allowance_policy.mode` is `fast_quote`. If `rounding_unit` and `end_loss_length` are absent, Fattern converts `0.05 m` rounding and `0.03 m` end loss into the selected unit.
+
+```json
+{
+  "allowance_policy": {
+    "mode": "fast_quote",
+    "rounding_unit": 5,
+    "base_buffer_percent": 5,
+    "cutting_loss_percent": 2,
+    "end_loss_length": 3,
+    "fabric_defect_buffer_percent": 1,
+    "unknown_risk_buffer_percent": 3,
+    "apply_warning_penalty": true
+  }
+}
+```
+
+This example assumes `unit: "cm"`. When `apply_warning_penalty` is enabled, warnings such as `GRAINLINE_NOT_DETECTED`, `SEAM_ALLOWANCE_DEFAULT_APPLIED`, `DXF_UNIT_AUTOSCALE_APPLIED`, and `BBOX_FALLBACK_USED` affect quote buffer and confidence.
 
 ## Fabric Width Presets
 
@@ -258,6 +288,8 @@ Stop the chain if a tool returns a `severity=blocker` error.
 - DXF layer checks through `layer_audit`
 - SVG rendering from placed outlines
 - Average seam-allowance rough expansion
+- Separate `minimum_yield` and `quote_yield`
+- `allowance_policy` quote buffer and confidence output
 - DXF autoscale
 - MCP stdio transport
 

@@ -33,7 +33,9 @@ Rules:
 - Ask the user to attach/provide DXF content, then register it with register_input_file.
 - Use get_estimation_questionnaire as a reference guide, not as a forced popup.
 - Required user decisions: fabric_width or cuttable_width, unit, seam_allowance status, nap_direction, grainline_required.
+- Optional quote decision: allowance_policy.mode can be fast_quote, sample_estimate, or bulk_precheck.
 - If seam_allowance.status is excluded and fallback_width is missing, Fattern applies the default 1/2 inch allowance: 12.7 mm, 1.27 cm, 0.5 inch.
+- calculate_marker_yield returns minimum_yield separately from quote_yield; do not call quote_yield a production-confirmed marker yield.
 - Stop when any tool returns a blocker error and explain the blocker before continuing.
 
 Safe order:
@@ -43,6 +45,7 @@ Safe order:
 4. parse_dxf
 5. extract_pattern_pieces
 6. calculate_marker_yield, or the lower-level calculate_piece_metrics -> estimate_marker_layout -> render_marker_svg -> export_artifacts chain
+7. Explain minimum_yield, quote_yield, allowance_breakdown, and confidence from tool output
 """
 
 FATTERN_ESTIMATE_PROMPT = """Guide the user through a Fattern rough marker estimate.
@@ -54,6 +57,7 @@ Collect only missing values:
 - seam_allowance.status: included or excluded
 - nap_direction: one_way, two_way, none, no_nap, or not_one_way
 - grainline_required
+- allowance_policy.mode when the user wants a quote profile
 
 Defaults when the user does not specify them:
 - allowed_rotation: [0]
@@ -63,6 +67,7 @@ Defaults when the user does not specify them:
 - shrinkage_percent: 0
 - fabric_type: unknown
 - seam allowance fallback: 1/2 inch when seam_allowance.status is excluded and fallback_width is absent
+- allowance_policy.mode: fast_quote
 
 Default rotation is 0 only. Do not rotate grainline-sensitive patterns unless the user explicitly allows it.
 """

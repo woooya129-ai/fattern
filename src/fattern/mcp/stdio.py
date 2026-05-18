@@ -187,7 +187,7 @@ def _package_version() -> str:
     try:
         return version("fattern")
     except PackageNotFoundError:
-        return "0.7.1"
+        return "0.8.0"
 
 
 if __name__ == "__main__":

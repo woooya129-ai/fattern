@@ -42,6 +42,9 @@ def _validate(schema: dict[str, Any], value: Any, root: dict[str, Any]) -> None:
         minimum = schema.get("minimum")
         if minimum is not None and value < minimum:
             raise ToolValidationError("input schema validation failed")
+        exclusive_minimum = schema.get("exclusiveMinimum")
+        if exclusive_minimum is not None and value <= exclusive_minimum:
+            raise ToolValidationError("input schema validation failed")
 
     if isinstance(value, list):
         min_items = schema.get("minItems")

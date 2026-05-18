@@ -269,6 +269,10 @@ def _question_for_field(field: str) -> dict[str, Any]:
             "question": "시접 포함 여부와 fallback 폭을 객체로 알려줘.",
             "allowed_answers": ["{\"status\": \"included\"}", "{\"status\": \"excluded\", \"fallback_width\": 1}"],
         },
+        "allowance_policy": {
+            "question": "견적 보정 정책을 선택해줘.",
+            "allowed_answers": ["fast_quote", "sample_estimate", "bulk_precheck"],
+        },
         "grainline_rule": {
             "question": "식서 방향 규칙을 알려줘.",
             "allowed_answers": ["required", "optional", "unknown"],

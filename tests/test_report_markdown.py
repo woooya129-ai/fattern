@@ -89,6 +89,29 @@ class MarkdownReportTests(unittest.TestCase):
         self.assertIn("## Warnings\n\n- none", report)
         self.assertIn("## Excluded Pieces\n\n- none", report)
 
+    def test_report_can_include_quote_decision_sections(self) -> None:
+        report = render_marker_report(
+            layout_result(),
+            quote_decision={
+                "minimum_yield": {"marker_length": 20.0, "unit": "cm"},
+                "quote_yield": {
+                    "final_yield": 24.0,
+                    "allowance_total": 4.0,
+                    "allowance_rate_percent": 20.0,
+                    "recommended_use": "fast quote only",
+                },
+                "allowance_breakdown": {"base_buffer": 2.0, "rounding": 2.0},
+                "allowance_reasons": {"base_buffer": "test buffer", "rounding": "rounded up"},
+                "confidence": {"grade": "B"},
+            },
+        )
+
+        self.assertIn("## Quote Summary", report)
+        self.assertIn("- minimum_yield: 20 cm", report)
+        self.assertIn("- quote_yield: 24 cm", report)
+        self.assertIn("| base\\_buffer | 2 cm | test buffer |", report)
+        self.assertIn("This is a quotation yield, not a production-confirmed marker yield.", report)
+
 
 if __name__ == "__main__":
     unittest.main()

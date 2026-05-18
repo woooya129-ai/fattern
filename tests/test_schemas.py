@@ -180,6 +180,9 @@ class SchemaContractTests(unittest.TestCase):
         self.assertEqual(marker_props["shrinkage"]["properties"]["length_percent"]["minimum"], 0)
         self.assertEqual(marker_props["shrinkage"]["properties"]["width_percent"]["minimum"], 0)
         self.assertEqual(marker_props["stretch_direction"]["enum"], ["lengthwise", "crosswise", "bias", "unknown", None])
+        self.assertEqual(marker_props["allowance_policy"]["properties"]["mode"]["enum"], ["fast_quote", "sample_estimate", "bulk_precheck"])
+        self.assertEqual(marker_props["allowance_policy"]["properties"]["rounding_unit"]["exclusiveMinimum"], 0)
+        self.assertEqual(marker_props["allowance_policy"]["properties"]["apply_warning_penalty"]["default"], True)
 
         self.assertEqual(inline_opaque_id_refs(marker_input, defs), TOOL_SCHEMAS["calculate_marker_yield"])
 
@@ -196,6 +199,7 @@ class SchemaContractTests(unittest.TestCase):
         for field in answers_schema["required"]:
             self.assertEqual(answers_schema["properties"][field], marker_input["properties"][field])
         self.assertEqual(answers_schema["properties"]["cuttable_width"], marker_input["properties"]["cuttable_width"])
+        self.assertEqual(answers_schema["properties"]["allowance_policy"], marker_input["properties"]["allowance_policy"])
 
     def test_readme_answers_example_validates_against_canonical_schema(self) -> None:
         readme = (ROOT / "README.md").read_text(encoding="utf-8")

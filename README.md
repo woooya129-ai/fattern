@@ -6,16 +6,16 @@ DXF 의류 패턴으로 가요척을 빠르게 추정하는 CLI/MCP 도구.
 
 Fattern은 **FAST + PATTERN = FATTERN**이라는 뜻이다.
 
-현재 버전: **0.7.1**
+현재 버전: **0.8.0**
 
 이 저장소는 **source-available, noncommercial use only**다. 라이선스는 **PolyForm Noncommercial License 1.0.0 + 별도 Commercial License** 구조다.
 
 ## 빠른 이해
 
-- Fattern은 LLM 계산기가 아니라 **DXF 기반 deterministic marker yield engine**이다.
-- 입력은 DXF 패턴과 원단 조건이고, 출력은 rough marker 추정 결과다.
+- Fattern은 LLM 계산기가 아니라 **DXF 기반 deterministic marker yield engine + 견적용 가요척 의사결정 레이어**다.
+- 입력은 DXF 패턴, 원단 조건, 견적 보정 정책이고 출력은 최소 요척과 견적용 가요척이 분리된 rough marker 추정 결과다.
 - 주요 산출물은 `result.json`, `marker_preview.svg`, `marker_report.md`, `marker_report.pdf`, `report.csv`다.
-- v0.7.1 기준 CSV/PDF report, canonical `answers.json`, 고수준 MCP tool `calculate_marker_yield`, legacy DXF fallback을 지원한다.
+- v0.8.0 기준 `minimum_yield`, `quote_yield`, `allowance_breakdown`, `confidence`를 고수준 MCP tool `calculate_marker_yield`와 report에 함께 출력한다.
 - 생산용 확정 요척이나 상용 CAD nesting 대체품은 아니다.
 
 ## 설치 방법
@@ -56,7 +56,7 @@ python -m fattern --help
 
 처음 보면 아래 순서로 확인하면 된다.
 
-1. `marker_report.md`: 사람이 읽는 요약. 원단 폭, marker length, 효율, warning을 먼저 본다.
+1. `marker_report.md`: 사람이 읽는 요약. 최소 요척, 견적용 가요척, allowance breakdown, warning을 먼저 본다.
 2. `marker_preview.svg`: 배치 그림. 패턴이 원단 폭 밖으로 나갔는지, 회전이 의도와 맞는지 본다.
 3. `report.csv`: 피스별 좌표와 회전값. 스프레드시트나 후속 자동화에 쓴다.
 4. `result.json`: tool chain 결과. MCP, Codex, Claude Code 같은 자동화가 읽기 좋다.
@@ -64,7 +64,7 @@ python -m fattern --help
 
 DXF 레이어가 애매하면 MCP의 `parse_dxf` 또는 `extract_pattern_pieces` 결과에서 `layer_audit`을 확인한다. 레이어별 entity 수, grainline 후보 근거, confidence, mapping status가 나온다. 숫자 레이어 `7`은 AAMA/ASTM 후보로만 표시되며, 검증된 CAD vendor mapping으로 확정하지 않는다.
 
-배치는 기존 BLF + beam search 골격을 유지한다. v0.7.1 기준 shelf compact 보조 step, longest-edge-down attempt, overlap geometry cache가 들어가서 작은 케이스의 빈 공간 재사용과 충돌 검사 반복 비용이 개선됐다. 그래도 상용 CAD급 최종 nesting은 아니다.
+배치는 기존 BLF + beam search 골격을 유지한다. v0.8.0 기준 marker engine은 최소 소요량을 만들고, quote layer가 견적용 보정과 confidence를 따로 계산한다. 그래도 상용 CAD급 최종 nesting은 아니다.
 
 ## 한 줄 사용
 
@@ -120,7 +120,8 @@ python -m fattern questionnaire
   "nap_direction": "two_way",
   "shrinkage_percent": 0,
   "fabric_type": "unknown",
-  "seam_allowance": {"status": "included"}
+  "seam_allowance": {"status": "included"},
+  "allowance_policy": {"mode": "fast_quote"}
 }
 ```
 
@@ -163,6 +164,35 @@ Run python -m fattern estimate using the DXF and answers.json in input/, then su
 - `fabric_type`: `woven`, `knit`, `unknown`
 - `stretch_direction`: 니트 스트레치 방향
 - `seam_allowance`: 시접 포함 여부 객체
+- `allowance_policy`: 견적용 보정 정책, `fast_quote`, `sample_estimate`, `bulk_precheck`
+
+## 최소 요척과 견적용 가요척
+
+v0.8.0부터 `calculate_marker_yield` 결과는 엔진 산출값과 견적값을 분리한다.
+
+```text
+minimum_yield = deterministic marker layout의 최소 소요량
+quote_yield = minimum_yield + allowance_policy 기반 실무 여유분
+```
+
+기본 `allowance_policy.mode`는 `fast_quote`다. `rounding_unit`과 `end_loss_length`를 직접 주지 않으면 `0.05 m` 단위 올림과 `0.03 m` end loss를 선택 단위로 환산해서 쓴다.
+
+```json
+{
+  "allowance_policy": {
+    "mode": "fast_quote",
+    "rounding_unit": 5,
+    "base_buffer_percent": 5,
+    "cutting_loss_percent": 2,
+    "end_loss_length": 3,
+    "fabric_defect_buffer_percent": 1,
+    "unknown_risk_buffer_percent": 3,
+    "apply_warning_penalty": true
+  }
+}
+```
+
+위 예시는 `unit: "cm"`일 때다. `apply_warning_penalty`가 켜져 있으면 `GRAINLINE_NOT_DETECTED`, `SEAM_ALLOWANCE_DEFAULT_APPLIED`, `DXF_UNIT_AUTOSCALE_APPLIED`, `BBOX_FALLBACK_USED` 같은 warning이 quote buffer와 confidence에 반영된다.
 
 ## 원단 폭 기준
 
@@ -258,6 +288,8 @@ export_artifacts
 - `layer_audit` 기반 DXF 레이어 점검
 - 피스 outline 기반 SVG 렌더링
 - 평균 시접 rough 확장
+- `minimum_yield`와 `quote_yield` 분리
+- `allowance_policy` 기반 견적 buffer와 confidence 산출
 - DXF autoscale
 - MCP stdio transport
 

@@ -47,6 +47,22 @@ SHRINKAGE_SCHEMA = {
     },
 }
 
+ALLOWANCE_POLICY_SCHEMA = {
+    "type": "object",
+    "additionalProperties": False,
+    "properties": {
+        "mode": {"type": "string", "enum": ["fast_quote", "sample_estimate", "bulk_precheck"], "default": "fast_quote"},
+        "rounding_unit": {"type": ["number", "null"], "exclusiveMinimum": 0, "default": None},
+        "base_buffer_percent": {"type": ["number", "null"], "minimum": 0, "default": None},
+        "cutting_loss_percent": {"type": ["number", "null"], "minimum": 0, "default": None},
+        "end_loss_length": {"type": ["number", "null"], "minimum": 0, "default": None},
+        "fabric_defect_buffer_percent": {"type": ["number", "null"], "minimum": 0, "default": None},
+        "unknown_risk_buffer_percent": {"type": ["number", "null"], "minimum": 0, "default": None},
+        "apply_warning_penalty": {"type": "boolean", "default": True},
+    },
+    "default": {},
+}
+
 GET_ESTIMATION_QUESTIONNAIRE_INPUT = {
     "type": "object",
     "additionalProperties": False,
@@ -262,6 +278,7 @@ CALCULATE_MARKER_YIELD_INPUT = {
                 "fallback_width": {"type": ["number", "null"], "minimum": 0, "default": None},
             },
         },
+        "allowance_policy": ALLOWANCE_POLICY_SCHEMA,
     },
 }
 
