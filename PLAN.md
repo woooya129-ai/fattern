@@ -28,7 +28,7 @@ Engine은 계산 주체다. DXF/AAMA/ASTM 파싱, polygon 추출, grainline, sea
 - Advisor: LLM 없는 deterministic Advisor와 선택형 서버-side LLM Advisor 추가 완료.
 - 계약 정리: LLM-facing schema, MCP tool schema, README 예시, 테스트 계약 동기화 완료.
 - Hosted 준비: `fattern host`, `/mcp`, `/hosting/policy`, `/server.json`, `/healthz` 추가 완료.
-- 검수 기준: `python -m unittest discover -s tests` 기준 189 tests OK, 1 skipped.
+- 검수 기준: `python -m unittest discover -s tests` 기준 191 tests OK, 1 skipped.
 
 ## 역할 경계
 
@@ -789,6 +789,8 @@ v0.9.0은 로컬 설치가 어려운 사용자를 위한 hosted Web UI와, ChatG
 - Remote MCP registry에서는 `estimate_workspace_dxf` 숨김. 직접 호출해도 `WORKSPACE_PATHS_DISABLED` 반환. (완료)
 - public bind host에서는 `FATTERN_REMOTE_MCP_TOKEN` 또는 `--bearer-token` 없으면 실행 차단. (완료)
 - `docs/hosting.md`, README, AI client guide, developer guide 업데이트. (완료)
+- 검수 후 정리: `/mcp`와 `/server.json`은 host 전용, `/hosting/policy`와 `/healthz`는 일반 Web UI에서도 열리는 진단 endpoint로 문서 분리 완료. (완료)
+- 검수 후 정리: workspace `config/answers.json`이 있어도 명시 CLI flag가 우선하도록 보정 완료. (완료)
 
 ### v0.9.0 병렬 작업
 

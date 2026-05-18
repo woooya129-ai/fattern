@@ -52,15 +52,24 @@ Public bind without a token is blocked.
 
 ## Endpoints
 
+Always available in the Web UI server:
+
 ```text
 /                Web UI
 /estimate        Web UI upload action
 /runs/...        persisted run outputs
 /advisor         optional server-side LLM Advisor
-/mcp             remote-MCP-prep HTTP JSON-RPC endpoint
 /hosting/policy  explicit hosted policy JSON
-/server.json     draft remote MCP manifest
 /healthz         health check
+```
+
+In plain `fattern ui`, `/hosting/policy` reports `remote_mcp.enabled=false`.
+
+Available only when started with `fattern host`:
+
+```text
+/mcp             remote-MCP-prep HTTP JSON-RPC endpoint
+/server.json     draft remote MCP manifest
 ```
 
 ## Remote MCP Contract

@@ -206,6 +206,45 @@ class FatternCliTests(unittest.TestCase):
         self.assertEqual(response["status"], "completed")
         self.assertTrue((Path(response["output_dir"]) / "run_summary.txt").is_file())
 
+    def test_explicit_cli_flags_override_workspace_config_answers(self) -> None:
+        previous = Path.cwd()
+        os.chdir(self.temp_dir)
+        try:
+            config_dir = self.temp_dir / "config"
+            config_dir.mkdir()
+            (config_dir / "answers.json").write_text(
+                json.dumps(
+                    {
+                        "fabric_width": 10,
+                        "unit": "cm",
+                        "grainline_required": False,
+                        "nap_direction": "two_way",
+                        "seam_allowance": {"status": "included"},
+                    }
+                ),
+                encoding="utf-8",
+            )
+            stdout = io.StringIO()
+            stderr = io.StringIO()
+
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                code = main(
+                    [
+                        "estimate",
+                        str(FIXTURE_DIR / "rectangle_lwpolyline.dxf"),
+                        "--one-way-fabric",
+                        "yes",
+                        "--out",
+                        str(self.temp_dir / "out"),
+                    ]
+                )
+        finally:
+            os.chdir(previous)
+
+        self.assertEqual(code, 1)
+        response = json.loads(stderr.getvalue())
+        self.assertEqual(response["errors"][0]["code"], "MISSING_GRAINLINE_ON_ONE_WAY_FABRIC")
+
     def test_estimate_can_use_canonical_answers_json(self) -> None:
         input_dir = self.temp_dir / "canonical-input"
         input_dir.mkdir()
@@ -271,28 +310,47 @@ class FatternCliTests(unittest.TestCase):
 
     def test_estimate_applies_default_seam_allowance_when_not_included(self) -> None:
         output_dir = self.temp_dir / "seam-out"
+        config_dir = self.temp_dir / "config"
+        config_dir.mkdir()
+        (config_dir / "answers.json").write_text(
+            json.dumps(
+                {
+                    "fabric_width": 10,
+                    "unit": "cm",
+                    "grainline_required": False,
+                    "nap_direction": "two_way",
+                    "seam_allowance": {"status": "included"},
+                }
+            ),
+            encoding="utf-8",
+        )
         stdout = io.StringIO()
         stderr = io.StringIO()
 
-        with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
-            code = main(
-                [
-                    "estimate",
-                    str(FIXTURE_DIR / "rectangle_lwpolyline.dxf"),
-                    "--fabric-width",
-                    "10",
-                    "--unit",
-                    "cm",
-                    "--seam-allowance-included",
-                    "no",
-                    "--one-way-fabric",
-                    "no",
-                    "--grainline-required",
-                    "no",
-                    "--out",
-                    str(output_dir),
-                ]
-            )
+        previous = Path.cwd()
+        os.chdir(self.temp_dir)
+        try:
+            with contextlib.redirect_stdout(stdout), contextlib.redirect_stderr(stderr):
+                code = main(
+                    [
+                        "estimate",
+                        str(FIXTURE_DIR / "rectangle_lwpolyline.dxf"),
+                        "--fabric-width",
+                        "10",
+                        "--unit",
+                        "cm",
+                        "--seam-allowance-included",
+                        "no",
+                        "--one-way-fabric",
+                        "no",
+                        "--grainline-required",
+                        "no",
+                        "--out",
+                        str(output_dir),
+                    ]
+                )
+        finally:
+            os.chdir(previous)
 
         self.assertEqual(code, 0, stderr.getvalue())
         response = json.loads(stdout.getvalue())

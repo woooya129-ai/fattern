@@ -159,12 +159,23 @@ def _estimate(args: argparse.Namespace) -> int:
         request_answers = dict(answers)
         if args.nap_direction is not None:
             request_answers["nap_direction"] = args.nap_direction
+        elif args.one_way_fabric is not None:
+            request_answers["nap_direction"] = "one_way" if args.one_way_fabric == "yes" else "two_way"
         if args.fabric_type is not None:
             request_answers["fabric_type"] = args.fabric_type
         if args.shrinkage_percent is not None:
             request_answers["shrinkage_percent"] = args.shrinkage_percent
-        if args.seam_allowance_status is not None:
-            seam_allowance_override: dict[str, Any] = {"status": args.seam_allowance_status}
+        if (
+            args.seam_allowance_status is not None
+            or args.seam_allowance_included is not None
+            or args.seam_allowance is not None
+        ):
+            seam_allowance_status = args.seam_allowance_status
+            if seam_allowance_status is None and args.seam_allowance_included is not None:
+                seam_allowance_status = "included" if args.seam_allowance_included == "yes" else "excluded"
+            if seam_allowance_status is None:
+                seam_allowance_status = "excluded"
+            seam_allowance_override: dict[str, Any] = {"status": seam_allowance_status}
             if args.seam_allowance is not None:
                 seam_allowance_override["fallback_width"] = args.seam_allowance
             request_answers["seam_allowance"] = seam_allowance_override

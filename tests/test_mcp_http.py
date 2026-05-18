@@ -49,6 +49,24 @@ class RemoteMcpHttpTests(unittest.TestCase):
         self.assertEqual(policy["security_policy"]["oauth_status"], "not_implemented_in_v0.9.0_preparation")
         self.assertEqual(manifest["remotes"][0], {"type": "streamable-http", "url": f"{self.base_url}/mcp"})
 
+    def test_plain_ui_exposes_diagnostics_but_not_remote_mcp_endpoints(self) -> None:
+        self.config.remote_mcp_enabled = False
+
+        health = self._get_json("/healthz")
+        policy = self._get_json("/hosting/policy")
+
+        self.assertEqual(health["status"], "ok")
+        self.assertFalse(health["remote_mcp_enabled"])
+        self.assertFalse(policy["remote_mcp"]["enabled"])
+        with self.assertRaises(HTTPError) as mcp_error:
+            urlopen(Request(f"{self.base_url}/mcp", method="GET"), timeout=10)
+        self.assertEqual(mcp_error.exception.code, 404)
+        mcp_error.exception.close()
+        with self.assertRaises(HTTPError) as manifest_error:
+            urlopen(Request(f"{self.base_url}/server.json", method="GET"), timeout=10)
+        self.assertEqual(manifest_error.exception.code, 404)
+        manifest_error.exception.close()
+
     def test_mcp_post_lists_remote_safe_tools_without_workspace_path_tool(self) -> None:
         response = self._post_mcp({"jsonrpc": "2.0", "id": 1, "method": "tools/list", "params": {}})
 

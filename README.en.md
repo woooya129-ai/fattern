@@ -125,11 +125,14 @@ v0.9.0 adds a hosted-prep run mode.
 fattern host --host 127.0.0.1 --port 8765
 ```
 
-This serves the Web UI plus:
+This enables Remote MCP endpoints on the same Web UI server.
 
 - `/mcp`: remote-MCP-prep HTTP JSON-RPC endpoint
-- `/hosting/policy`: upload, retention, auth, and security policy JSON
 - `/server.json`: draft manifest for future MCP registry/package work
+
+These diagnostic endpoints are also available in plain `fattern ui`. In plain `fattern ui`, `/hosting/policy` reports `remote_mcp.enabled=false`.
+
+- `/hosting/policy`: upload, retention, auth, and security policy JSON
 - `/healthz`: health check
 
 Public binds require a bearer token.

@@ -125,11 +125,14 @@ v0.9.0에는 hosted 준비용 실행 모드가 있다.
 fattern host --host 127.0.0.1 --port 8765
 ```
 
-이 모드는 같은 Web UI 서버에 아래 endpoint를 연다.
+이 모드는 같은 Web UI 서버에서 Remote MCP endpoint를 켠다.
 
 - `/mcp`: Remote MCP 준비용 HTTP JSON-RPC endpoint
-- `/hosting/policy`: 업로드, 보관, 인증, 보안 정책 JSON
 - `/server.json`: future MCP registry/package manifest 초안
+
+아래 진단 endpoint는 일반 `fattern ui`에서도 열린다. 단, `fattern ui`에서는 `remote_mcp.enabled=false`로 표시된다.
+
+- `/hosting/policy`: 업로드, 보관, 인증, 보안 정책 JSON
 - `/healthz`: 헬스체크
 
 외부 공개 바인딩은 bearer token이 필요하다.
