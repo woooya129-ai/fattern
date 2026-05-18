@@ -16,6 +16,7 @@ from fattern.mcp import McpToolRegistry
 from fattern.mcp.stdio import serve_stdio
 from fattern.orchestration.intent import build_estimation_questionnaire
 from fattern.schemas import SUPPORTED_UNITS
+from fattern.web import DEFAULT_HOST, DEFAULT_PORT, serve_web_ui
 
 
 def main(argv: Sequence[str] | None = None) -> int:
@@ -27,6 +28,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _questionnaire()
     if args.command == "mcp-stdio":
         return serve_stdio()
+    if args.command == "ui":
+        return serve_web_ui(host=args.host, port=args.port, open_browser=args.open_browser)
     parser.print_help()
     return 2
 
@@ -97,6 +100,10 @@ def _build_parser() -> argparse.ArgumentParser:
 
     subparsers.add_parser("questionnaire", help="Print the setup questionnaire JSON.")
     subparsers.add_parser("mcp-stdio", help="Run the MCP server over stdio.")
+    ui = subparsers.add_parser("ui", help="Run the local browser UI.")
+    ui.add_argument("--host", default=DEFAULT_HOST, help=f"Bind host. Default: {DEFAULT_HOST}.")
+    ui.add_argument("--port", type=int, default=DEFAULT_PORT, help=f"Bind port. Default: {DEFAULT_PORT}.")
+    ui.add_argument("--open-browser", action="store_true", help="Open the UI in the default browser.")
     return parser
 
 

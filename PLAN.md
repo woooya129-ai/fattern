@@ -12,7 +12,7 @@ Engine은 계산 주체다. DXF/AAMA/ASTM 파싱, polygon 추출, grainline, sea
 
 ## 현재 완료 상태
 
-- 릴리스 표기: `pyproject.toml`, `README.md`, `README.en.md` 기준 `0.8.0`으로 정리 완료.
+- 릴리스 표기: `pyproject.toml`, `README.md`, `README.en.md` 기준 `0.8.1`로 정리 완료.
 - 빠른 이해와 설치 문서: README 양쪽에 빠른 이해, 설치 방법, 실행 예시, 산출물 목록 반영 완료.
 - 고수준 경로: `calculate_marker_yield`, CLI `estimate`, canonical `answers.json` 연동 완료.
 - 조건 엔진: `cuttable_width`, `size_ratio`, `piece_quantity`, `spacing`, `nap_direction`, `fabric_type`, `shrinkage`, `stretch_direction`, `seam_allowance` 정책 반영 완료.
@@ -23,8 +23,9 @@ Engine은 계산 주체다. DXF/AAMA/ASTM 파싱, polygon 추출, grainline, sea
 - Nesting 개선: shelf compact 보조 step, longest-edge-down attempt, overlap geometry cache 반영 완료.
 - 리포트 산출물: `result.json`, `marker_preview.svg`, `marker_report.md`, `marker_report.pdf`, `report.csv`, 별도 zip export 경로 완료.
 - 견적용 가요척: `minimum_yield`, `quote_yield`, `allowance_breakdown`, `confidence` 출력 완료.
+- 접근성: 로컬 Web UI `fattern ui` 추가 완료. MCP/CLI 기존 계약은 유지한다.
 - 계약 정리: LLM-facing schema, MCP tool schema, README 예시, 테스트 계약 동기화 완료.
-- 검수 기준: `python -m unittest discover -s tests` 기준 167 tests OK, 1 skipped.
+- 검수 기준: `python -m unittest discover -s tests` 기준 169 tests OK, 1 skipped.
 
 ## 역할 경계
 
@@ -435,6 +436,22 @@ Quote layer:
 - 과거 실제 marker와의 calibration은 아직 없다.
 - quote layer는 생산 확정값이 아니라 견적 의사결정 보조값이다.
 
+## v0.8.1 목표: 일반 사용자 접근성 개선
+
+v0.8.1은 MCP/CLI 계약을 유지하면서 일반 사용자가 브라우저로 접근할 수 있는 로컬 Web UI를 추가하는 단계다.
+
+### v0.8.1 완료 항목
+
+- 릴리스 표기 `0.8.1` 반영 완료.
+- `fattern ui` CLI command 추가 완료.
+- 로컬 Web UI에서 DXF 업로드, 원단 조건 입력, 견적 모드 선택, 결과 확인, artifact 다운로드 지원 완료.
+- Web UI는 업로드된 파일 bytes를 서버 내부 `JobStore`에 직접 등록하고 기존 `calculate_marker_yield`를 호출한다. (완료)
+- MCP의 `register_input_file.content_base64` 계약과 CLI `estimate` 동작은 유지한다. (완료)
+
+### base64 경계
+
+base64는 MCP JSON-RPC tool input에서 바이너리 DXF 내용을 JSON 문자열로 안전하게 전달하기 위한 내부 전송 포맷이다. 일반 사용자용 Web UI에서는 파일 선택 업로드를 쓰므로 base64를 화면이나 README 사용 흐름에 노출하지 않는다.
+
 ### CSV 필드
 
 ```text
@@ -580,12 +597,12 @@ report에는 아래 의미가 드러나야 한다.
 
 ## 실행 결론
 
-v0.8.0 기준으로 방향은 **고수준 tool + schema + 조건 엔진 + 리포트 계약 + 견적용 quote layer**를 먼저 닫는 쪽이다. nesting 알고리즘 경쟁은 후순위다.
+v0.8.1 기준으로 방향은 **Web UI 접근성 + 고수준 tool + schema + 조건 엔진 + 리포트 계약 + 견적용 quote layer**를 먼저 닫는 쪽이다. nesting 알고리즘 경쟁은 후순위다.
 
 현재 제품 계약은 Codex, Claude Code, CLI, MCP 모두에서 아래 흐름으로 고정한다.
 
 ```text
-slash 안내 또는 질문지 답변 + DXF
+Web UI 또는 slash 안내 또는 질문지 답변 + DXF
   -> calculate_marker_yield
   -> deterministic engine
   -> minimum_yield

@@ -106,6 +106,7 @@ def build_quote_decision(
         },
         "quote_yield": {
             "base_yield": base_yield,
+            "unit": unit,
             "allowance_total": allowance_total,
             "allowance_rate_percent": allowance_rate,
             "final_yield": final_yield,

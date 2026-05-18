@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "fattern"
-version = "0.8.0"
+version = "0.8.1"
 description = "DXF-based rough marker yield estimator."
 requires-python = ">=3.11"
 authors = [{ name = "fattern maintainers" }]

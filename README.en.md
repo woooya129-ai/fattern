@@ -6,7 +6,7 @@ A CLI/MCP tool for fast rough marker-yield estimation from DXF garment pattern f
 
 Fattern means **FAST + PATTERN = FATTERN**.
 
-Current version: **0.8.0**
+Current version: **0.8.1**
 
 This repository is **source-available, noncommercial use only** under **PolyForm Noncommercial License 1.0.0 + a separate Commercial License**.
 
@@ -15,7 +15,7 @@ This repository is **source-available, noncommercial use only** under **PolyForm
 - Fattern is not an LLM calculator. It is a **DXF-based deterministic marker yield engine + quote-yield decision layer**.
 - Inputs are a DXF pattern, fabric conditions, and optional quote allowance policy. Outputs separate minimum yield from quotation yield.
 - Main artifacts are `result.json`, `marker_preview.svg`, `marker_report.md`, `marker_report.pdf`, and `report.csv`.
-- v0.8.0 returns `minimum_yield`, `quote_yield`, `allowance_breakdown`, and `confidence` through the high-level MCP tool `calculate_marker_yield` and reports.
+- v0.8.1 supports a local Web UI, CLI, and MCP while returning `minimum_yield`, `quote_yield`, `allowance_breakdown`, and `confidence`.
 - It is not a production final-yield system or a replacement for commercial CAD nesting.
 
 ## Installation
@@ -46,7 +46,15 @@ python -m fattern --help
 
 ## How To Use
 
-The easiest workflow is the `input/` folder workflow.
+The easiest workflow is the local Web UI.
+
+```powershell
+fattern ui
+```
+
+Upload a DXF in the browser, choose fabric width, unit, seam allowance, nap direction, and quote mode, then calculate. The Web UI handles file upload directly, so users do not need to deal with base64. MCP and CLI keep their existing contracts.
+
+For CLI usage, the easiest workflow is the `input/` folder workflow.
 
 1. Create `input/`.
 2. Put one DXF file in it.
@@ -64,9 +72,22 @@ Read the outputs in this order:
 
 When DXF layers are unclear, inspect `layer_audit` from `parse_dxf` or `extract_pattern_pieces`. It shows entity counts by layer, grainline candidate source, confidence, and mapping status. Numeric layer `7` remains an AAMA/ASTM candidate only; Fattern does not treat it as a verified CAD vendor mapping.
 
-Layout still uses the existing BLF + beam-search structure. In v0.8.0, the marker engine produces the minimum requirement and the quote layer separately adds practical allowance and confidence. This is still not commercial CAD-grade final nesting.
+Layout still uses the existing BLF + beam-search structure. In v0.8.1, the marker engine produces the minimum requirement and the quote layer separately adds practical allowance and confidence. This is still not commercial CAD-grade final nesting.
 
 ## One-Line Use
+
+Web UI:
+
+```powershell
+fattern ui
+```
+
+Directly from the source tree:
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m fattern ui
+```
 
 Put one DXF file and `answers.json` in `input/`, then run:
 
@@ -168,7 +189,7 @@ Run python -m fattern estimate using the DXF and answers.json in input/, then su
 
 ## Minimum Yield And Quote Yield
 
-Starting in v0.8.0, `calculate_marker_yield` separates the engine result from the quotation result.
+In v0.8.1, `calculate_marker_yield` separates the engine result from the quotation result.
 
 ```text
 minimum_yield = minimum requirement from deterministic marker layout
@@ -240,6 +261,25 @@ python -m fattern estimate input\sample.dxf --fabric-width 150 --unit cm --dxf-u
 
 `marker_preview.svg` shows the fabric boundary, placed pattern outlines, fabric width, marker length, grainline status, allowed rotations, and a grainline direction indicator in the side information panel.
 
+## Web UI
+
+Run the local browser UI:
+
+```powershell
+fattern ui --host 127.0.0.1 --port 8765
+```
+
+The screen covers:
+
+- DXF upload
+- fabric width, cuttable width, unit
+- seam allowance status and fallback width
+- nap direction, grainline requirement, allowed rotation
+- quote mode `fast_quote`, `sample_estimate`, `bulk_precheck`
+- SVG, Markdown, PDF, CSV, JSON, and ZIP downloads
+
+The Web UI stores uploaded file bytes in the server-side `JobStore` and calls the existing `calculate_marker_yield` workflow. Base64 is only an internal MCP JSON-RPC transport format for file contents; it is not exposed in the Web UI.
+
 ## MCP
 
 Run the stdio server:
@@ -291,6 +331,7 @@ Stop the chain if a tool returns a `severity=blocker` error.
 - Separate `minimum_yield` and `quote_yield`
 - `allowance_policy` quote buffer and confidence output
 - DXF autoscale
+- Local Web UI
 - MCP stdio transport
 
 Not yet supported:

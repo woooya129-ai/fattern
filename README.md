@@ -6,7 +6,7 @@ DXF 의류 패턴으로 가요척을 빠르게 추정하는 CLI/MCP 도구.
 
 Fattern은 **FAST + PATTERN = FATTERN**이라는 뜻이다.
 
-현재 버전: **0.8.0**
+현재 버전: **0.8.1**
 
 이 저장소는 **source-available, noncommercial use only**다. 라이선스는 **PolyForm Noncommercial License 1.0.0 + 별도 Commercial License** 구조다.
 
@@ -15,7 +15,7 @@ Fattern은 **FAST + PATTERN = FATTERN**이라는 뜻이다.
 - Fattern은 LLM 계산기가 아니라 **DXF 기반 deterministic marker yield engine + 견적용 가요척 의사결정 레이어**다.
 - 입력은 DXF 패턴, 원단 조건, 견적 보정 정책이고 출력은 최소 요척과 견적용 가요척이 분리된 rough marker 추정 결과다.
 - 주요 산출물은 `result.json`, `marker_preview.svg`, `marker_report.md`, `marker_report.pdf`, `report.csv`다.
-- v0.8.0 기준 `minimum_yield`, `quote_yield`, `allowance_breakdown`, `confidence`를 고수준 MCP tool `calculate_marker_yield`와 report에 함께 출력한다.
+- v0.8.1 기준 로컬 Web UI, CLI, MCP를 모두 지원하고 `minimum_yield`, `quote_yield`, `allowance_breakdown`, `confidence`를 함께 출력한다.
 - 생산용 확정 요척이나 상용 CAD nesting 대체품은 아니다.
 
 ## 설치 방법
@@ -46,7 +46,15 @@ python -m fattern --help
 
 ## How to use
 
-가장 쉬운 사용법은 `input/` 폴더 방식이다.
+가장 쉬운 사용법은 로컬 Web UI다.
+
+```powershell
+fattern ui
+```
+
+브라우저에서 DXF를 업로드하고 원단 폭, 단위, 시접, 방향성, 견적 모드를 선택한 뒤 계산한다. Web UI에서는 파일을 직접 업로드하므로 사용자가 base64를 다룰 필요가 없다. MCP/CLI는 기존 방식 그대로 작동한다.
+
+CLI에서 가장 쉬운 사용법은 `input/` 폴더 방식이다.
 
 1. `input/` 폴더를 만든다.
 2. DXF 파일을 하나 넣는다.
@@ -64,9 +72,22 @@ python -m fattern --help
 
 DXF 레이어가 애매하면 MCP의 `parse_dxf` 또는 `extract_pattern_pieces` 결과에서 `layer_audit`을 확인한다. 레이어별 entity 수, grainline 후보 근거, confidence, mapping status가 나온다. 숫자 레이어 `7`은 AAMA/ASTM 후보로만 표시되며, 검증된 CAD vendor mapping으로 확정하지 않는다.
 
-배치는 기존 BLF + beam search 골격을 유지한다. v0.8.0 기준 marker engine은 최소 소요량을 만들고, quote layer가 견적용 보정과 confidence를 따로 계산한다. 그래도 상용 CAD급 최종 nesting은 아니다.
+배치는 기존 BLF + beam search 골격을 유지한다. v0.8.1 기준 marker engine은 최소 소요량을 만들고, quote layer가 견적용 보정과 confidence를 따로 계산한다. 그래도 상용 CAD급 최종 nesting은 아니다.
 
 ## 한 줄 사용
+
+Web UI:
+
+```powershell
+fattern ui
+```
+
+소스 트리에서 바로 실행:
+
+```powershell
+$env:PYTHONPATH = "src"
+python -m fattern ui
+```
 
 DXF를 `input/` 폴더에 넣고 `input/answers.json`을 만든 뒤 실행한다.
 
@@ -168,7 +189,7 @@ Run python -m fattern estimate using the DXF and answers.json in input/, then su
 
 ## 최소 요척과 견적용 가요척
 
-v0.8.0부터 `calculate_marker_yield` 결과는 엔진 산출값과 견적값을 분리한다.
+v0.8.1 기준 `calculate_marker_yield` 결과는 엔진 산출값과 견적값을 분리한다.
 
 ```text
 minimum_yield = deterministic marker layout의 최소 소요량
@@ -240,6 +261,25 @@ python -m fattern estimate input\sample.dxf --fabric-width 150 --unit cm --dxf-u
 
 `marker_preview.svg`에는 실제 원단 경계, 배치된 패턴 outline, 원단 폭, marker length, 식서 상태, 허용 회전이 표시된다. 식서 방향 표시도 빈 공간 정보 패널에 함께 나온다.
 
+## Web UI
+
+로컬 브라우저 UI를 실행한다.
+
+```powershell
+fattern ui --host 127.0.0.1 --port 8765
+```
+
+화면에서 처리하는 항목:
+
+- DXF 파일 업로드
+- 원단 폭, 실제 재단 가능 폭, 단위
+- 시접 포함 여부와 fallback 폭
+- 방향성 원단, 식서 필수 여부, 허용 회전
+- 견적 모드 `fast_quote`, `sample_estimate`, `bulk_precheck`
+- SVG, Markdown, PDF, CSV, JSON, ZIP 다운로드
+
+Web UI는 업로드된 파일 bytes를 서버 내부 `JobStore`에 등록하고 기존 `calculate_marker_yield`를 호출한다. base64는 MCP JSON-RPC 도구에서 파일 내용을 전달하기 위한 내부 포맷일 뿐이고 Web UI 화면에는 노출하지 않는다.
+
 ## MCP
 
 stdio 서버:
@@ -291,6 +331,7 @@ export_artifacts
 - `minimum_yield`와 `quote_yield` 분리
 - `allowance_policy` 기반 견적 buffer와 confidence 산출
 - DXF autoscale
+- 로컬 Web UI
 - MCP stdio transport
 
 아직 지원하지 않는 것:
