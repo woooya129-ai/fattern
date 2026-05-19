@@ -390,15 +390,38 @@ def _render_page(
       --ink: #0f172a;
       --muted: #475569;
       --surface: #f8fafc;
+      --panel: #ffffff;
+      --field: #ffffff;
+      --canvas: #ffffff;
       --accent: #2563eb;
       --danger: #b91c1c;
+      --danger-bg: #fff1f2;
+      --danger-border: #fecaca;
+      --pre-bg: #0f172a;
+      --pre-ink: #e2e8f0;
+    }}
+    :root[data-theme="dark"] {{
+      color-scheme: dark;
+      --border: #3f4652;
+      --ink: #f4f4f5;
+      --muted: #b6bdc8;
+      --surface: #181a1f;
+      --panel: #111317;
+      --field: #0d0f12;
+      --canvas: #0a0b0d;
+      --accent: #4f8cff;
+      --danger: #fecaca;
+      --danger-bg: #351316;
+      --danger-border: #7f1d1d;
+      --pre-bg: #050608;
+      --pre-ink: #e5e7eb;
     }}
     * {{ box-sizing: border-box; }}
     body {{
       margin: 0;
       font-family: Arial, Helvetica, sans-serif;
       color: var(--ink);
-      background: #ffffff;
+      background: var(--canvas);
     }}
     main {{
       max-width: 1180px;
@@ -408,7 +431,35 @@ def _render_page(
       grid-template-columns: minmax(320px, 420px) 1fr;
       gap: 20px;
     }}
+    .topbar {{
+      grid-column: 1 / -1;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 14px;
+    }}
+    .controls {{ display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; }}
+    .toggle-group {{
+      display: inline-flex;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      overflow: hidden;
+      background: var(--panel);
+    }}
+    .toggle-button {{
+      width: auto;
+      min-height: 34px;
+      padding: 0 12px;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      color: var(--muted);
+      font-size: 12px;
+      font-weight: 700;
+    }}
+    .toggle-button.is-active {{ background: var(--accent); color: #ffffff; }}
     h1 {{ font-size: 24px; margin: 0 0 16px; }}
+    .topbar h1 {{ margin: 0; }}
     h2 {{ font-size: 18px; margin: 0 0 12px; }}
     form, .panel {{
       border: 1px solid var(--border);
@@ -425,7 +476,7 @@ def _render_page(
       padding: 8px 10px;
       font-size: 14px;
       color: var(--ink);
-      background: #ffffff;
+      background: var(--field);
     }}
     .row {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }}
     .stack {{ display: grid; gap: 16px; }}
@@ -441,6 +492,17 @@ def _render_page(
       font-weight: 700;
       cursor: pointer;
     }}
+    .toggle-group .toggle-button {{
+      width: auto;
+      min-height: 34px;
+      padding: 0 12px;
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+      color: var(--muted);
+      font-size: 12px;
+    }}
+    .toggle-group .toggle-button.is-active {{ background: var(--accent); color: #ffffff; }}
     textarea {{
       width: 100%;
       min-height: 92px;
@@ -450,7 +512,7 @@ def _render_page(
       font-size: 14px;
       resize: vertical;
     }}
-    .error {{ color: var(--danger); border-color: #fecaca; background: #fff1f2; }}
+    .error {{ color: var(--danger); border-color: var(--danger-border); background: var(--danger-bg); }}
     .summary {{
       display: grid;
       grid-template-columns: repeat(3, minmax(0, 1fr));
@@ -461,7 +523,7 @@ def _render_page(
       border: 1px solid var(--border);
       border-radius: 8px;
       padding: 12px;
-      background: #ffffff;
+      background: var(--panel);
     }}
     .metric span {{ display: block; color: var(--muted); font-size: 12px; }}
     .metric strong {{ display: block; margin-top: 4px; font-size: 18px; }}
@@ -472,7 +534,7 @@ def _render_page(
       border: 1px solid var(--border);
       border-radius: 6px;
       padding: 7px 10px;
-      background: #ffffff;
+      background: var(--panel);
     }}
     .small-list {{ margin: 0; padding-left: 18px; color: var(--muted); line-height: 1.45; }}
     .message-list {{ display: grid; gap: 8px; }}
@@ -480,14 +542,16 @@ def _render_page(
       border: 1px solid var(--border);
       border-radius: 8px;
       padding: 10px;
-      background: #ffffff;
+      background: var(--panel);
     }}
     .message strong {{ display: block; margin-bottom: 4px; }}
     .message code {{ color: var(--muted); }}
-    img {{ width: 100%; max-height: 720px; object-fit: contain; border: 1px solid var(--border); background: #ffffff; }}
-    pre {{ white-space: pre-wrap; word-break: break-word; background: #0f172a; color: #e2e8f0; padding: 12px; border-radius: 8px; }}
+    img {{ width: 100%; max-height: 720px; object-fit: contain; border: 1px solid var(--border); background: var(--panel); }}
+    pre {{ white-space: pre-wrap; word-break: break-word; background: var(--pre-bg); color: var(--pre-ink); padding: 12px; border-radius: 8px; }}
     @media (max-width: 860px) {{
       main {{ grid-template-columns: 1fr; padding: 14px; }}
+      .topbar {{ align-items: flex-start; flex-direction: column; }}
+      .controls {{ justify-content: flex-start; }}
       .summary {{ grid-template-columns: 1fr; }}
       .row {{ grid-template-columns: 1fr; }}
     }}
@@ -495,8 +559,20 @@ def _render_page(
 </head>
 <body>
   <main>
-    <section>
+    <section class="topbar">
       <h1>Fattern Local UI</h1>
+      <div class="controls" aria-label="Display controls">
+        <div class="toggle-group" role="group" aria-label="Language">
+          <button class="toggle-button" type="button" data-lang="ko">KOR</button>
+          <button class="toggle-button" type="button" data-lang="en">ENG</button>
+        </div>
+        <div class="toggle-group" role="group" aria-label="Theme">
+          <button class="toggle-button" type="button" data-theme-choice="light">LIGHT</button>
+          <button class="toggle-button" type="button" data-theme-choice="dark">DARK</button>
+        </div>
+      </div>
+    </section>
+    <section>
       {_render_error(error)}
       {_render_form()}
     </section>
@@ -505,57 +581,114 @@ def _render_page(
       {_render_advisor_panel(result, advisor_reply=advisor_reply)}
     </section>
   </main>
+  {_ui_script()}
 </body>
 </html>"""
 
 
+def _ui_script() -> str:
+    return """<script>
+(() => {
+  const root = document.documentElement;
+  const storage = window.localStorage;
+
+  function setLanguage(language) {
+    const activeLanguage = language === "en" ? "en" : "ko";
+    root.lang = activeLanguage;
+    document.querySelectorAll("[data-ko][data-en]").forEach((node) => {
+      node.textContent = activeLanguage === "en" ? node.dataset.en : node.dataset.ko;
+    });
+    document.querySelectorAll("[data-placeholder-ko][data-placeholder-en]").forEach((node) => {
+      node.setAttribute(
+        "placeholder",
+        activeLanguage === "en" ? node.dataset.placeholderEn : node.dataset.placeholderKo
+      );
+    });
+    document.querySelectorAll("[data-alt-ko][data-alt-en]").forEach((node) => {
+      node.setAttribute("alt", activeLanguage === "en" ? node.dataset.altEn : node.dataset.altKo);
+    });
+    document.querySelectorAll("[data-lang]").forEach((button) => {
+      const selected = button.dataset.lang === activeLanguage;
+      button.classList.toggle("is-active", selected);
+      button.setAttribute("aria-pressed", String(selected));
+    });
+    storage.setItem("fattern.language", activeLanguage);
+  }
+
+  function setTheme(theme) {
+    const activeTheme = theme === "dark" ? "dark" : "light";
+    root.dataset.theme = activeTheme;
+    document.querySelectorAll("[data-theme-choice]").forEach((button) => {
+      const selected = button.dataset.themeChoice === activeTheme;
+      button.classList.toggle("is-active", selected);
+      button.setAttribute("aria-pressed", String(selected));
+    });
+    storage.setItem("fattern.theme", activeTheme);
+  }
+
+  document.querySelectorAll("[data-lang]").forEach((button) => {
+    button.addEventListener("click", () => setLanguage(button.dataset.lang));
+  });
+  document.querySelectorAll("[data-theme-choice]").forEach((button) => {
+    button.addEventListener("click", () => setTheme(button.dataset.themeChoice));
+  });
+
+  const preferredTheme = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches
+    ? "dark"
+    : "light";
+  setLanguage(storage.getItem("fattern.language") || "ko");
+  setTheme(storage.getItem("fattern.theme") || preferredTheme);
+})();
+</script>"""
+
+
 def _render_form() -> str:
     return """<form action="/estimate" method="post" enctype="multipart/form-data">
-  <h2>질문지</h2>
-  <p class="notice">Fattern은 DXF 패턴으로 rough marker와 견적용 가요척을 계산한다. 생산 확정용 CAD nesting 대체품은 아니다. 모르는 값은 기본값으로 시작해도 된다.</p>
-  <label>DXF file<input name="dxf_file" type="file" accept=".dxf" required></label>
+  <h2 data-ko="질문지" data-en="Questionnaire">질문지</h2>
+  <p class="notice" data-ko="Fattern은 DXF 패턴으로 rough marker와 견적용 가요척을 계산한다. 생산 확정용 CAD nesting 대체품은 아니다. 모르는 값은 기본값으로 시작해도 된다." data-en="Fattern estimates rough marker yield and quote yield from DXF patterns. It is not a production CAD nesting replacement. Unknown values can stay at their defaults.">Fattern은 DXF 패턴으로 rough marker와 견적용 가요척을 계산한다. 생산 확정용 CAD nesting 대체품은 아니다. 모르는 값은 기본값으로 시작해도 된다.</p>
+  <label><span>DXF file</span><input name="dxf_file" type="file" accept=".dxf" required></label>
   <div class="row">
-    <label>Fabric width<input name="fabric_width" type="number" min="1" step="0.001" value="150" required></label>
-    <label>Cuttable width<input name="cuttable_width" type="number" min="1" step="0.001" placeholder="optional"></label>
+    <label><span data-ko="원단 폭" data-en="Fabric width">원단 폭</span><input name="fabric_width" type="number" min="1" step="0.001" value="150" required></label>
+    <label><span data-ko="재단 가능 폭" data-en="Cuttable width">재단 가능 폭</span><input name="cuttable_width" type="number" min="1" step="0.001" placeholder="optional" data-placeholder-ko="선택" data-placeholder-en="optional"></label>
   </div>
   <div class="row">
-    <label>Unit
+    <label><span data-ko="단위" data-en="Unit">단위</span>
       <select name="unit">
         <option value="cm" selected>cm</option><option value="mm">mm</option><option value="m">m</option>
         <option value="inch">inch</option><option value="ft">ft</option><option value="yd">yd</option>
       </select>
     </label>
-    <label>Spacing<input name="spacing" type="number" min="0" step="0.001" value="0.2"></label>
+    <label><span data-ko="조각 간격" data-en="Spacing">조각 간격</span><input name="spacing" type="number" min="0" step="0.001" value="0.2"></label>
   </div>
   <div class="row">
-    <label>Seam allowance
+    <label><span data-ko="시접 상태" data-en="Seam allowance">시접 상태</span>
       <select name="seam_allowance_status">
-        <option value="included" selected>included - no added seam</option>
-        <option value="excluded">excluded - add fallback/default 1/2 inch</option>
+        <option value="included" selected data-ko="포함됨 - 추가 시접 없음" data-en="included - no added seam">포함됨 - 추가 시접 없음</option>
+        <option value="excluded" data-ko="없음 - fallback/기본 1/2 inch 추가" data-en="excluded - add fallback/default 1/2 inch">없음 - fallback/기본 1/2 inch 추가</option>
       </select>
     </label>
-    <label>Fallback width<input name="seam_allowance_width" type="number" min="0" step="0.001" placeholder="only when excluded; blank = 1/2 inch"></label>
+    <label><span data-ko="Fallback 시접 폭" data-en="Fallback width">Fallback 시접 폭</span><input name="seam_allowance_width" type="number" min="0" step="0.001" placeholder="시접 없음일 때만, 빈 값 = 1/2 inch" data-placeholder-ko="시접 없음일 때만, 빈 값 = 1/2 inch" data-placeholder-en="only when excluded; blank = 1/2 inch"></label>
   </div>
   <div class="row">
-    <label>Nap direction
+    <label><span data-ko="원단 방향성" data-en="Nap direction">원단 방향성</span>
       <select name="nap_direction">
         <option value="two_way" selected>two_way</option><option value="one_way">one_way</option>
         <option value="none">none</option><option value="no_nap">no_nap</option><option value="not_one_way">not_one_way</option>
       </select>
     </label>
-    <label>Grainline required
+    <label><span data-ko="식서 필수" data-en="Grainline required">식서 필수</span>
       <select name="grainline_required">
         <option value="false" selected>false</option><option value="true">true</option>
       </select>
     </label>
   </div>
   <div class="row">
-    <label>Rotation
+    <label><span data-ko="회전 허용" data-en="Rotation">회전 허용</span>
       <select name="allowed_rotation">
         <option value="0" selected>0</option><option value="0,180">0,180</option><option value="0,90,180,270">0,90,180,270</option>
       </select>
     </label>
-    <label>Quote mode
+    <label><span data-ko="견적 모드" data-en="Quote mode">견적 모드</span>
       <select name="allowance_policy_mode">
         <option value="fast_quote" selected>fast_quote</option>
         <option value="sample_estimate">sample_estimate</option>
@@ -564,14 +697,14 @@ def _render_form() -> str:
     </label>
   </div>
   <div class="row">
-    <label>Fabric type
+    <label><span data-ko="원단 종류" data-en="Fabric type">원단 종류</span>
       <select name="fabric_type">
         <option value="unknown" selected>unknown</option><option value="woven">woven</option><option value="knit">knit</option>
       </select>
     </label>
-    <label>Shrinkage %<input name="shrinkage_percent" type="number" min="0" step="0.001" value="0"></label>
+    <label><span data-ko="수축률 %" data-en="Shrinkage %">수축률 %</span><input name="shrinkage_percent" type="number" min="0" step="0.001" value="0"></label>
   </div>
-  <button type="submit">Calculate</button>
+  <button type="submit" data-ko="계산" data-en="Calculate">계산</button>
 </form>"""
 
 
@@ -583,11 +716,11 @@ def _render_error(error: str | None) -> str:
 
 def _render_result(estimate: WebEstimateResult | None) -> str:
     if estimate is None:
-        return '<div class="panel"><h2>Result</h2><p class="notice">DXF를 업로드하면 preview와 산출물 링크가 여기에 표시된다.</p></div>'
+        return '<div class="panel"><h2 data-ko="결과" data-en="Result">결과</h2><p class="notice" data-ko="DXF를 업로드하면 preview와 산출물 링크가 여기에 표시된다." data-en="Upload a DXF to show the preview and output links here.">DXF를 업로드하면 preview와 산출물 링크가 여기에 표시된다.</p></div>'
     result = estimate.result
     if result.get("status") != "completed":
         return f"""<div class="panel error">
-  <h2>Blocked</h2>
+  <h2 data-ko="중단됨" data-en="Blocked">중단됨</h2>
   <div class="links">{_result_links(result, estimate.archive_artifact_id)}</div>
   <pre>{escape(json.dumps(_public_result(result), ensure_ascii=False, indent=2))}</pre>
 </div>"""
@@ -600,14 +733,14 @@ def _render_result(estimate: WebEstimateResult | None) -> str:
     quote = _yield_text(result.get("quote_yield"), "final_yield")
     confidence = escape(str(result.get("confidence", {}).get("grade", "unknown")))
     return f"""<div class="panel">
-  <h2>Result</h2>
+  <h2 data-ko="결과" data-en="Result">결과</h2>
   <div class="summary">
-    <div class="metric"><span>minimum_yield</span><strong>{minimum}</strong></div>
-    <div class="metric"><span>quote_yield</span><strong>{quote}</strong></div>
-    <div class="metric"><span>confidence</span><strong>{confidence}</strong></div>
+    <div class="metric"><span data-ko="최소 소요량" data-en="minimum_yield">최소 소요량</span><strong>{minimum}</strong></div>
+    <div class="metric"><span data-ko="견적 소요량" data-en="quote_yield">견적 소요량</span><strong>{quote}</strong></div>
+    <div class="metric"><span data-ko="신뢰도" data-en="confidence">신뢰도</span><strong>{confidence}</strong></div>
   </div>
   <div class="links">{links}</div>
-  {f'<img src="{preview_url}" alt="marker preview">' if preview_url else ''}
+  {f'<img src="{preview_url}" alt="마커 미리보기" data-alt-ko="마커 미리보기" data-alt-en="marker preview">' if preview_url else ''}
 </div>"""
 
 
@@ -660,10 +793,10 @@ def _render_advisor_panel(
     llm_block = _render_llm_block(result, status, advisor_reply)
     return f"""<div class="panel">
   <h2>Advisor</h2>
-  <p class="notice">계산은 Fattern engine이 하고, Advisor는 입력값과 warning을 설명한다.</p>
-  <h3>다음 단계</h3>
+  <p class="notice" data-ko="계산은 Fattern engine이 하고, Advisor는 입력값과 warning을 설명한다." data-en="Fattern engine performs the calculation. Advisor explains inputs and warnings.">계산은 Fattern engine이 하고, Advisor는 입력값과 warning을 설명한다.</p>
+  <h3 data-ko="다음 단계" data-en="Next steps">다음 단계</h3>
   <ul class="small-list">{next_steps}</ul>
-  <h3>입력 도움말</h3>
+  <h3 data-ko="입력 도움말" data-en="Input help">입력 도움말</h3>
   <ul class="small-list">{field_items}</ul>
   {messages}
   {llm_block}
@@ -682,7 +815,7 @@ def _render_advisor_messages(messages: list[dict[str, str]]) -> str:
   <p>{escape(message['action'])}</p>
 </div>"""
         )
-    return '<h3>Warning / Blocker</h3><div class="message-list">' + "".join(items) + "</div>"
+    return '<h3 data-ko="경고 / 중단 사유" data-en="Warning / Blocker">경고 / 중단 사유</h3><div class="message-list">' + "".join(items) + "</div>"
 
 
 def _render_llm_block(
@@ -693,19 +826,19 @@ def _render_llm_block(
     reply_html = ""
     if advisor_reply is not None:
         if advisor_reply.get("status") == "completed":
-            reply_html = f'<div class="message"><strong>LLM answer</strong><p>{escape(str(advisor_reply.get("answer", "")))}</p></div>'
+            reply_html = f'<div class="message"><strong data-ko="LLM 답변" data-en="LLM answer">LLM 답변</strong><p>{escape(str(advisor_reply.get("answer", "")))}</p></div>'
         else:
-            reply_html = f'<div class="message"><strong>LLM disabled</strong><p>{escape(str(advisor_reply.get("message", "")))}</p></div>'
+            reply_html = f'<div class="message"><strong data-ko="LLM 비활성" data-en="LLM disabled">LLM 비활성</strong><p>{escape(str(advisor_reply.get("message", "")))}</p></div>'
     run_id = result.get("run_id") if isinstance(result, dict) else None
     if not run_id:
-        return reply_html + '<p class="notice">LLM Advisor는 계산 결과가 있을 때만 사용할 수 있다.</p>'
+        return reply_html + '<p class="notice" data-ko="LLM Advisor는 계산 결과가 있을 때만 사용할 수 있다." data-en="LLM Advisor is available only after a calculation result exists.">LLM Advisor는 계산 결과가 있을 때만 사용할 수 있다.</p>'
     if not status.get("available"):
-        return reply_html + f'<p class="notice">LLM Advisor disabled: {escape(str(status.get("reason", "")))}</p>'
+        return reply_html + f'<p class="notice"><span data-ko="LLM Advisor 비활성" data-en="LLM Advisor disabled">LLM Advisor 비활성</span>: {escape(str(status.get("reason", "")))}</p>'
     return reply_html + f"""<form action="/advisor" method="post">
   <h3>LLM Advisor</h3>
   <input type="hidden" name="run_id" value="{escape(str(run_id))}">
-  <label>Question<textarea name="message" maxlength="2000" placeholder="이 결과에서 견적 리스크를 설명해줘"></textarea></label>
-  <button type="submit">Ask Advisor</button>
+  <label><span data-ko="질문" data-en="Question">질문</span><textarea name="message" maxlength="2000" placeholder="이 결과에서 견적 리스크를 설명해줘" data-placeholder-ko="이 결과에서 견적 리스크를 설명해줘" data-placeholder-en="Explain quote risks in this result"></textarea></label>
+  <button type="submit" data-ko="Advisor에게 묻기" data-en="Ask Advisor">Advisor에게 묻기</button>
 </form>"""
 
 

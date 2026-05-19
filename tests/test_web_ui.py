@@ -8,7 +8,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
 from fattern.jobs import JobStore
-from fattern.web import estimate_upload, parse_multipart_form
+from fattern.web import _render_page, estimate_upload, parse_multipart_form
 
 
 FIXTURE_DIR = ROOT / "tests" / "fixtures"
@@ -20,6 +20,18 @@ class WebUiTests(unittest.TestCase):
 
     def tearDown(self) -> None:
         shutil.rmtree(self.temp_dir, ignore_errors=True)
+
+    def test_render_page_includes_language_and_theme_toggles(self) -> None:
+        html = _render_page()
+
+        self.assertIn('data-lang="ko"', html)
+        self.assertIn('data-lang="en"', html)
+        self.assertIn('data-theme-choice="light"', html)
+        self.assertIn('data-theme-choice="dark"', html)
+        self.assertIn('data-ko="질문지"', html)
+        self.assertIn('data-en="Questionnaire"', html)
+        self.assertIn('fattern.language', html)
+        self.assertIn('fattern.theme', html)
 
     def test_estimate_upload_uses_file_bytes_and_returns_artifact_links(self) -> None:
         store = JobStore(self.temp_dir / "jobs")
