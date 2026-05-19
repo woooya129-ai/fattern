@@ -1503,6 +1503,7 @@ def _piece_metrics_in_mm(result: MetricsResult) -> dict[str, PieceMetrics]:
             perimeter=metric.perimeter * scale,
             unit="mm",
             points=tuple((point[0] * scale, point[1] * scale) for point in metric.points),
+            original_points=tuple((point[0] * scale, point[1] * scale) for point in metric.original_points),
             seam_allowance_width=metric.seam_allowance_width * scale,
         )
         converted[metric.piece_id] = converted_metric

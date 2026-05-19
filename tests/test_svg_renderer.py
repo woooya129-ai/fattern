@@ -74,6 +74,35 @@ def outlined_layout_result() -> LayoutResult:
     )
 
 
+def seam_allowance_layout_result() -> LayoutResult:
+    return LayoutResult(
+        placements=(
+            LayoutPlacement(
+                piece_id="front_panel",
+                layer="OUTLINE",
+                x=0.0,
+                y=0.0,
+                width=6.0,
+                height=5.0,
+                rotation_degrees=0,
+                outline_points=((0.0, 5.0), (6.0, 5.0), (6.0, 0.0), (0.0, 0.0)),
+                seam_line_points=((1.0, 4.0), (5.0, 4.0), (5.0, 1.0), (1.0, 1.0)),
+                seam_allowance_width=1.0,
+            ),
+        ),
+        fabric_width=6.0,
+        marker_length=5.0,
+        efficiency=0.5,
+        clearance=0.2,
+        unit="cm",
+        no_overlap=True,
+        messages=(),
+        within_fabric_width=True,
+        total_piece_area=30.0,
+        rotation_allowed_degrees=(0,),
+    )
+
+
 class SvgRendererTests(unittest.TestCase):
     def test_renders_fabric_boundary_and_layout_placements(self) -> None:
         svg = render_marker_svg(layout_result())
@@ -104,6 +133,17 @@ class SvgRendererTests(unittest.TestCase):
         self.assertIsNotNone(polygon)
         self.assertEqual(polygon.attrib["points"], "0,4 4,4 4,3 1,3 1,0 0,0")
         self.assertIsNone(root.find(".//{http://www.w3.org/2000/svg}rect[@class='piece-shape']"))
+
+    def test_renders_seam_line_when_seam_allowance_is_available(self) -> None:
+        svg = render_marker_svg(seam_allowance_layout_result())
+        root = ElementTree.fromstring(svg)
+
+        seam_line = root.find(".//{http://www.w3.org/2000/svg}polygon[@class='seam-line']")
+        self.assertIsNotNone(seam_line)
+        assert seam_line is not None
+        self.assertEqual(seam_line.attrib["points"], "1,4 5,4 5,1 1,1")
+        self.assertEqual(seam_line.attrib["fill"], "none")
+        self.assertIn("stroke-dasharray", seam_line.attrib)
 
     def test_labels_and_attributes_are_escaped(self) -> None:
         svg = render_marker_svg(layout_result())

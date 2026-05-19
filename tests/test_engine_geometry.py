@@ -64,6 +64,8 @@ class GeometryMetricTests(unittest.TestCase):
         self.assertAlmostEqual(metric.bbox.height, 5.0)
         self.assertAlmostEqual(metric.area, 30.0)
         self.assertAlmostEqual(metric.perimeter, 22.0)
+        self.assertEqual(metric.original_points, ((0.0, 0.0), (4.0, 0.0), (4.0, 3.0), (0.0, 3.0)))
+        self.assertNotEqual(metric.points, metric.original_points)
         self.assertAlmostEqual(metric.seam_allowance_width, 1.0)
         self.assertEqual(result.messages[0].code, "SEAM_ALLOWANCE_ESTIMATED")
 

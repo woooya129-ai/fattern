@@ -55,6 +55,56 @@ class WebUiTests(unittest.TestCase):
         self.assertTrue((result.run.output_dir / "run_summary.txt").is_file())
         self.assertIn("web_url", result.result)
 
+    def test_estimate_upload_renders_seam_line_when_seam_allowance_excluded(self) -> None:
+        store = JobStore(self.temp_dir / "jobs")
+        result = estimate_upload(
+            file_name="sample.dxf",
+            file_bytes=(FIXTURE_DIR / "rectangle_lwpolyline.dxf").read_bytes(),
+            fields={
+                "fabric_width": "10",
+                "unit": "cm",
+                "spacing": "0.2",
+                "seam_allowance_status": "excluded",
+                "nap_direction": "two_way",
+                "grainline_required": "false",
+                "allowed_rotation": "0",
+                "allowance_policy_mode": "fast_quote",
+                "fabric_type": "unknown",
+                "shrinkage_percent": "0",
+            },
+            store=store,
+            output_root=self.temp_dir / "output",
+            web_base_url="http://127.0.0.1:8765",
+        )
+
+        assert result.run is not None
+        svg = (result.run.output_dir / "marker_preview.svg").read_text(encoding="utf-8")
+        self.assertIn('class="seam-line"', svg)
+        self.assertIn("SEAM_ALLOWANCE_DEFAULT_APPLIED", [warning["code"] for warning in result.result["warnings"]])
+
+    def test_estimate_upload_rejects_fallback_width_when_seam_allowance_included(self) -> None:
+        with self.assertRaisesRegex(ValueError, "Fallback width only applies"):
+            estimate_upload(
+                file_name="sample.dxf",
+                file_bytes=(FIXTURE_DIR / "rectangle_lwpolyline.dxf").read_bytes(),
+                fields={
+                    "fabric_width": "10",
+                    "unit": "cm",
+                    "spacing": "0.2",
+                    "seam_allowance_status": "included",
+                    "seam_allowance_width": "0.5",
+                    "nap_direction": "two_way",
+                    "grainline_required": "false",
+                    "allowed_rotation": "0",
+                    "allowance_policy_mode": "fast_quote",
+                    "fabric_type": "unknown",
+                    "shrinkage_percent": "0",
+                },
+                store=JobStore(self.temp_dir / "jobs"),
+                output_root=self.temp_dir / "output",
+                web_base_url="http://127.0.0.1:8765",
+            )
+
     def test_parse_multipart_form_extracts_fields_and_file(self) -> None:
         boundary = "----fattern-test"
         body = (

@@ -530,11 +530,11 @@ def _render_form() -> str:
   <div class="row">
     <label>Seam allowance
       <select name="seam_allowance_status">
-        <option value="included" selected>included</option>
-        <option value="excluded">excluded</option>
+        <option value="included" selected>included - no added seam</option>
+        <option value="excluded">excluded - add fallback/default 1/2 inch</option>
       </select>
     </label>
-    <label>Fallback width<input name="seam_allowance_width" type="number" min="0" step="0.001" placeholder="default 1/2 inch"></label>
+    <label>Fallback width<input name="seam_allowance_width" type="number" min="0" step="0.001" placeholder="only when excluded; blank = 1/2 inch"></label>
   </div>
   <div class="row">
     <label>Nap direction
@@ -852,8 +852,10 @@ def _rotations(value: str | None) -> list[int]:
 
 def _seam_allowance(fields: dict[str, str]) -> dict[str, Any]:
     status = _select(fields.get("seam_allowance_status"), ("included", "excluded"), "included")
-    seam_allowance: dict[str, Any] = {"status": status}
     fallback_width = _optional_float(fields.get("seam_allowance_width"))
+    if status == "included" and fallback_width is not None:
+        raise ValueError("Fallback width only applies when seam allowance is excluded.")
+    seam_allowance: dict[str, Any] = {"status": status}
     if fallback_width is not None:
         seam_allowance["fallback_width"] = fallback_width
     return seam_allowance

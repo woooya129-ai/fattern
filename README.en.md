@@ -119,6 +119,8 @@ Read the key numbers this way:
 - `allowance_breakdown`: why extra allowance was added to `quote_yield`
 - `confidence`: quote confidence based on inputs and warnings
 
+When seam allowance is applied, the preview shows the rough cut line as the outer solid line and the original DXF outline as the inner dashed line.
+
 ## CLI
 
 Advanced users can calculate directly from the CLI.

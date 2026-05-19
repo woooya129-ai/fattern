@@ -761,6 +761,7 @@ def _place_bbox_shelf_layout(
         width, height = _oriented_dimensions(metric, orientation)
         placement_x = _next_shelf_x(row_x, clearance)
         outline_points = _oriented_outline_points(metric, orientation)
+        seam_line_points = _oriented_seam_line_points(metric, orientation)
         placements.append(
             LayoutPlacement(
                 piece_id=metric.piece_id,
@@ -772,6 +773,8 @@ def _place_bbox_shelf_layout(
                 rotation_degrees=orientation,
                 outline_points=outline_points,
                 collision_points=_downsample_outline_points(outline_points, MAX_COLLISION_OUTLINE_POINTS),
+                seam_line_points=seam_line_points,
+                seam_allowance_width=metric.seam_allowance_width,
             )
         )
         row_x = placement_x + width
@@ -878,6 +881,8 @@ def _move_placement(placement: LayoutPlacement, x: float, y: float) -> LayoutPla
         rotation_degrees=placement.rotation_degrees,
         outline_points=placement.outline_points,
         collision_points=placement.collision_points,
+        seam_line_points=placement.seam_line_points,
+        seam_allowance_width=placement.seam_allowance_width,
     )
 
 
@@ -910,6 +915,7 @@ def _candidate_placements(
             continue
         outline_points = _oriented_outline_points(metric, rotation)
         collision_points = _downsample_outline_points(outline_points, MAX_COLLISION_OUTLINE_POINTS)
+        seam_line_points = _oriented_seam_line_points(metric, rotation)
         x_candidates, y_candidates = _candidate_coordinates(placements, clearance, width, height, fabric_width)
         for y in y_candidates:
             for x in x_candidates:
@@ -925,6 +931,8 @@ def _candidate_placements(
                     rotation_degrees=rotation,
                     outline_points=outline_points,
                     collision_points=collision_points,
+                    seam_line_points=seam_line_points,
+                    seam_allowance_width=metric.seam_allowance_width,
                 )
                 if _has_clearance_conflict(candidate, placements, clearance, collision_cache):
                     continue
@@ -1387,7 +1395,21 @@ def _bounded_coordinates(values: set[float], upper_bound: float | None, *, limit
 
 
 def _oriented_outline_points(metric: PieceMetrics, rotation_degrees: int) -> tuple[Point, ...]:
-    if not metric.points:
+    return _oriented_metric_points(metric, metric.points, rotation_degrees)
+
+
+def _oriented_seam_line_points(metric: PieceMetrics, rotation_degrees: int) -> tuple[Point, ...]:
+    if metric.seam_allowance_width <= EPSILON:
+        return ()
+    return _oriented_metric_points(metric, metric.original_points, rotation_degrees)
+
+
+def _oriented_metric_points(
+    metric: PieceMetrics,
+    points: tuple[Point, ...],
+    rotation_degrees: int,
+) -> tuple[Point, ...]:
+    if not points:
         return ()
 
     width = metric.bbox.width
@@ -1397,7 +1419,7 @@ def _oriented_outline_points(metric: PieceMetrics, rotation_degrees: int) -> tup
             _clean_coordinate(point[0] - metric.bbox.min_x),
             _clean_coordinate(metric.bbox.max_y - point[1]),
         )
-        for point in metric.points
+        for point in points
     )
     return tuple(_rotate_outline_point(point, width, height, rotation_degrees) for point in local_points)
 

@@ -82,6 +82,19 @@ def render_marker_svg(result: LayoutResult, title: str = "Marker layout") -> str
                     "stroke-width": _stroke_width(result),
                 },
             )
+            if placement.seam_line_points:
+                ElementTree.SubElement(
+                    group,
+                    "polygon",
+                    {
+                        "class": "seam-line",
+                        "points": _points(placement.seam_line_points),
+                        "fill": "none",
+                        "stroke": "#0f766e",
+                        "stroke-width": _stroke_width(result),
+                        "stroke-dasharray": _seam_dash(result),
+                    },
+                )
         else:
             ElementTree.SubElement(
                 group,
@@ -130,6 +143,11 @@ def _positive_viewbox_dimension(value: float) -> float:
 def _stroke_width(result: LayoutResult) -> str:
     dimension = min(_positive_viewbox_dimension(result.fabric_width), _positive_viewbox_dimension(result.marker_length))
     return _fmt(max(dimension / 400.0, 0.02))
+
+
+def _seam_dash(result: LayoutResult) -> str:
+    stroke = float(_stroke_width(result))
+    return f"{_fmt(stroke * 4)} {_fmt(stroke * 3)}"
 
 
 def _label_size(result: LayoutResult) -> str:

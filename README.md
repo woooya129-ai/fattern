@@ -119,6 +119,8 @@ output/
 - `allowance_breakdown`: `quote_yield`에 붙은 여유분 이유
 - `confidence`: 입력과 경고를 기준으로 한 견적 신뢰도
 
+시접이 적용된 경우 preview의 바깥 실선은 rough 절단선이고, 안쪽 점선은 원본 DXF 외곽선이다.
+
 ## CLI
 
 고급 사용자는 CLI로 바로 계산할 수 있다.

@@ -93,6 +93,7 @@ def calculate_piece_metrics(
                 unit=unit,
                 point_count=len(measured_points),
                 points=measured_points,
+                original_points=points,
                 seam_allowance_width=seam_allowance_width,
                 source_unit=source_unit,
                 unit_scale=unit_scale,

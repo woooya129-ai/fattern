@@ -96,6 +96,7 @@ class PieceMetrics:
     unit: str
     point_count: int
     points: tuple[Point, ...] = ()
+    original_points: tuple[Point, ...] = ()
     seam_allowance_width: float = 0.0
     source_unit: str | None = None
     unit_scale: float = 1.0
@@ -126,6 +127,8 @@ class LayoutPlacement:
     rotation_degrees: int
     outline_points: tuple[Point, ...] = ()
     collision_points: tuple[Point, ...] = ()
+    seam_line_points: tuple[Point, ...] = ()
+    seam_allowance_width: float = 0.0
 
     @property
     def right(self) -> float:
