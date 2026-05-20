@@ -1,10 +1,12 @@
 @echo off
 setlocal
 set "PYTHONPATH=%~dp0src;%PYTHONPATH%"
+set "FATTERN_ARGS=%*"
+if "%~1"=="" set "FATTERN_ARGS=ui"
 
 where python >nul 2>nul
 if not errorlevel 1 (
-    python -m fattern %*
+    python -m fattern %FATTERN_ARGS%
     exit /b %ERRORLEVEL%
 )
 
@@ -12,7 +14,7 @@ where py >nul 2>nul
 if not errorlevel 1 (
     py -3 -c "import sys; raise SystemExit(sys.version_info < (3, 11))" >nul 2>nul
     if not errorlevel 1 (
-        py -3 -m fattern %*
+        py -3 -m fattern %FATTERN_ARGS%
         exit /b %ERRORLEVEL%
     )
 )
@@ -20,7 +22,7 @@ if not errorlevel 1 (
 for /f "delims=" %%P in ('dir /b /s "%LOCALAPPDATA%\Programs\Python\Python3*\python.exe" 2^>nul') do (
     "%%P" -c "import sys; raise SystemExit(sys.version_info < (3, 11))" >nul 2>nul
     if not errorlevel 1 (
-        "%%P" -m fattern %*
+        "%%P" -m fattern %FATTERN_ARGS%
         exit /b %ERRORLEVEL%
     )
 )
