@@ -478,6 +478,69 @@ def _render_page(
       color: var(--ink);
       background: var(--field);
     }}
+    .field-with-unit {{
+      display: grid;
+      grid-template-columns: minmax(0, 1fr) auto;
+      align-items: center;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--field);
+      overflow: hidden;
+    }}
+    .field-with-unit input {{
+      border: 0;
+      border-radius: 0;
+      background: transparent;
+    }}
+    .unit-input-control {{
+      position: relative;
+      display: block;
+    }}
+    .unit-suffix {{
+      min-width: 54px;
+      padding: 0 10px;
+      color: var(--muted);
+      font-size: 13px;
+      text-align: center;
+      border-left: 1px solid var(--border);
+    }}
+    .preset-menu {{
+      position: absolute;
+      z-index: 20;
+      top: calc(100% + 4px);
+      left: 0;
+      right: 0;
+      display: grid;
+      gap: 2px;
+      max-height: 220px;
+      overflow-y: auto;
+      padding: 6px;
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      background: var(--panel);
+      box-shadow: 0 12px 30px var(--shadow);
+    }}
+    .preset-menu[hidden] {{
+      display: none;
+    }}
+    .preset-option {{
+      width: 100%;
+      min-height: 34px;
+      padding: 0 10px;
+      border: 0;
+      border-radius: 4px;
+      background: transparent;
+      color: var(--ink);
+      font-size: 13px;
+      font-weight: 700;
+      text-align: left;
+    }}
+    .preset-option:hover,
+    .preset-option:focus {{
+      background: var(--field);
+      color: var(--accent);
+      outline: none;
+    }}
     .row {{ display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }}
     .stack {{ display: grid; gap: 16px; }}
     .notice {{ margin: 0 0 14px; color: var(--muted); line-height: 1.45; }}
@@ -688,6 +751,143 @@ def _ui_script() -> str:
     button.addEventListener("click", () => setTheme(button.dataset.themeChoice));
   });
 
+  const unitSelect = document.querySelector("[data-unit-select]");
+  const unitPresets = {
+    fabric_width: {
+      cm: ["90", "110", "140", "145", "147", "150", "160"],
+      mm: ["900", "1100", "1400", "1450", "1470", "1500", "1600"],
+      m: ["0.9", "1.1", "1.4", "1.45", "1.47", "1.5", "1.6"],
+      inch: ["36", "44", "54", "56", "57", "58", "60"],
+      ft: ["3", "3.5", "4", "4.75", "5"],
+      yd: ["1", "1.25", "1.5", "1.6", "1.75"]
+    },
+    cuttable_width: {
+      cm: ["90", "110", "140", "145", "147", "150"],
+      mm: ["900", "1100", "1400", "1450", "1470", "1500"],
+      m: ["0.9", "1.1", "1.4", "1.45", "1.47", "1.5"],
+      inch: ["36", "44", "54", "56", "57", "58"],
+      ft: ["3", "3.5", "4", "4.75", "5"],
+      yd: ["1", "1.25", "1.5", "1.6"]
+    },
+    spacing: {
+      cm: ["0", "0.1", "0.2", "0.5", "1"],
+      mm: ["0", "1", "2", "5", "10"],
+      m: ["0", "0.001", "0.002", "0.005", "0.01"],
+      inch: ["0", "0.04", "0.08", "0.125", "0.25", "0.5"],
+      ft: ["0", "0.003", "0.006", "0.01", "0.02"],
+      yd: ["0", "0.001", "0.002", "0.005", "0.01"]
+    },
+    seam_allowance_width: {
+      cm: ["0.5", "0.7", "1", "1.2", "1.5"],
+      mm: ["5", "7", "10", "12", "15"],
+      m: ["0.005", "0.007", "0.01", "0.012", "0.015"],
+      inch: ["0.25", "0.375", "0.5", "0.625"],
+      ft: ["0.02", "0.03", "0.04", "0.05"],
+      yd: ["0.006", "0.008", "0.011", "0.014"]
+    }
+  };
+  const defaultValues = {
+    fabric_width: { cm: "150", mm: "1500", m: "1.5", inch: "57", ft: "4.75", yd: "1.6" },
+    spacing: { cm: "0.2", mm: "2", m: "0.002", inch: "0.08", ft: "0.006", yd: "0.002" }
+  };
+
+  function activeUnit() {
+    return unitSelect ? unitSelect.value : "cm";
+  }
+
+  function closePresetMenus() {
+    document.querySelectorAll("[data-preset-menu]").forEach((menu) => {
+      menu.hidden = true;
+    });
+  }
+
+  function setFieldValue(field, value, synced) {
+    field.dataset.applyingPreset = "true";
+    field.value = value;
+    field.dataset.unitSynced = synced ? "true" : "false";
+    field.dispatchEvent(new Event("input", { bubbles: true }));
+    delete field.dataset.applyingPreset;
+  }
+
+  function renderPresetMenu(fieldName) {
+    const menu = document.querySelector(`[data-preset-menu="${fieldName}"]`);
+    if (!menu) {
+      return;
+    }
+    const values = (unitPresets[fieldName] && unitPresets[fieldName][activeUnit()]) || [];
+    menu.replaceChildren();
+    values.forEach((value, index) => {
+      const option = document.createElement("button");
+      option.type = "button";
+      option.className = "preset-option";
+      option.textContent = value;
+      option.addEventListener("click", () => {
+        const field = document.querySelector(`[name="${fieldName}"]`);
+        if (!field) {
+          return;
+        }
+        field.dataset.selectedPresetIndex = String(index);
+        setFieldValue(field, value, true);
+        field.focus();
+        closePresetMenus();
+      });
+      menu.appendChild(option);
+    });
+  }
+
+  function openPresetMenu(fieldName) {
+    renderPresetMenu(fieldName);
+    closePresetMenus();
+    const menu = document.querySelector(`[data-preset-menu="${fieldName}"]`);
+    if (menu && menu.children.length) {
+      menu.hidden = false;
+    }
+  }
+
+  function updateUnitControls() {
+    document.querySelectorAll("[data-unit-suffix]").forEach((node) => {
+      node.textContent = activeUnit();
+    });
+    Object.keys(unitPresets).forEach(renderPresetMenu);
+    document.querySelectorAll("[data-preset-field][data-unit-synced='true']").forEach((field) => {
+      const values = unitPresets[field.name] && unitPresets[field.name][activeUnit()];
+      const presetIndex = Number(field.dataset.selectedPresetIndex);
+      const value = Number.isInteger(presetIndex) && values && values[presetIndex] !== undefined
+        ? values[presetIndex]
+        : defaultValues[field.name] && defaultValues[field.name][activeUnit()];
+      if (value !== undefined) {
+        setFieldValue(field, value, true);
+      }
+    });
+  }
+
+  if (unitSelect) {
+    unitSelect.addEventListener("change", updateUnitControls);
+  }
+
+  document.querySelectorAll("[data-preset-field]").forEach((field) => {
+    field.addEventListener("focus", () => openPresetMenu(field.name));
+    field.addEventListener("click", () => openPresetMenu(field.name));
+    field.addEventListener("input", () => {
+      if (field.dataset.applyingPreset !== "true") {
+        field.dataset.unitSynced = "false";
+        delete field.dataset.selectedPresetIndex;
+      }
+    });
+  });
+
+  document.addEventListener("pointerdown", (event) => {
+    if (!event.target.closest(".unit-input-control")) {
+      closePresetMenus();
+    }
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (event.key === "Escape") {
+      closePresetMenus();
+    }
+  });
+
   const estimateForm = document.querySelector("[data-estimate-form]");
   if (estimateForm) {
     let isSubmitting = false;
@@ -715,6 +915,7 @@ def _ui_script() -> str:
     : "light";
   setLanguage(storage.getItem("fattern.language") || "ko");
   setTheme(storage.getItem("fattern.theme") || preferredTheme);
+  updateUnitControls();
 })();
 </script>"""
 
@@ -725,17 +926,23 @@ def _render_form() -> str:
   <p class="notice" data-ko="Fattern은 DXF 패턴으로 rough marker와 견적용 가요척을 계산한다. 생산 확정용 CAD nesting 대체품은 아니다. 모르는 값은 기본값으로 시작해도 된다." data-en="Fattern estimates rough marker yield and quote yield from DXF patterns. It is not a production CAD nesting replacement. Unknown values can stay at their defaults.">Fattern은 DXF 패턴으로 rough marker와 견적용 가요척을 계산한다. 생산 확정용 CAD nesting 대체품은 아니다. 모르는 값은 기본값으로 시작해도 된다.</p>
   <label><span>DXF file</span><input name="dxf_file" type="file" accept=".dxf" required></label>
   <div class="row">
-    <label><span data-ko="원단 폭" data-en="Fabric width">원단 폭</span><input name="fabric_width" type="number" min="1" step="0.001" value="150" required></label>
-    <label><span data-ko="재단 가능 폭" data-en="Cuttable width">재단 가능 폭</span><input name="cuttable_width" type="number" min="1" step="0.001" placeholder="optional" data-placeholder-ko="선택" data-placeholder-en="optional"></label>
+    <label><span data-ko="원단 폭" data-en="Fabric width">원단 폭</span>
+      <span class="unit-input-control"><span class="field-with-unit"><input name="fabric_width" type="number" min="1" step="0.001" value="150" required data-preset-field data-unit-synced="true"><span class="unit-suffix" data-unit-suffix>cm</span></span><span class="preset-menu" data-preset-menu="fabric_width" hidden></span></span>
+    </label>
+    <label><span data-ko="재단 가능 폭" data-en="Cuttable width">재단 가능 폭</span>
+      <span class="unit-input-control"><span class="field-with-unit"><input name="cuttable_width" type="number" min="1" step="0.001" placeholder="직접 입력" data-placeholder-ko="직접 입력" data-placeholder-en="manual" data-preset-field><span class="unit-suffix" data-unit-suffix>cm</span></span><span class="preset-menu" data-preset-menu="cuttable_width" hidden></span></span>
+    </label>
   </div>
   <div class="row">
     <label><span data-ko="단위" data-en="Unit">단위</span>
-      <select name="unit">
+      <select name="unit" data-unit-select>
         <option value="cm" selected>cm</option><option value="mm">mm</option><option value="m">m</option>
         <option value="inch">inch</option><option value="ft">ft</option><option value="yd">yd</option>
       </select>
     </label>
-    <label><span data-ko="조각 간격" data-en="Spacing">조각 간격</span><input name="spacing" type="number" min="0" step="0.001" value="0.2"></label>
+    <label><span data-ko="조각 간격" data-en="Spacing">조각 간격</span>
+      <span class="unit-input-control"><span class="field-with-unit"><input name="spacing" type="number" min="0" step="0.001" value="0.2" data-preset-field data-unit-synced="true"><span class="unit-suffix" data-unit-suffix>cm</span></span><span class="preset-menu" data-preset-menu="spacing" hidden></span></span>
+    </label>
   </div>
   <div class="row">
     <label><span data-ko="시접 상태" data-en="Seam allowance">시접 상태</span>
@@ -744,7 +951,9 @@ def _render_form() -> str:
         <option value="excluded" data-ko="없음 - fallback/기본 1/2 inch 추가" data-en="excluded - add fallback/default 1/2 inch">없음 - fallback/기본 1/2 inch 추가</option>
       </select>
     </label>
-    <label><span data-ko="Fallback 시접 폭" data-en="Fallback width">Fallback 시접 폭</span><input name="seam_allowance_width" type="number" min="0" step="0.001" placeholder="시접 없음일 때만, 빈 값 = 1/2 inch" data-placeholder-ko="시접 없음일 때만, 빈 값 = 1/2 inch" data-placeholder-en="only when excluded; blank = 1/2 inch"></label>
+    <label><span data-ko="Fallback 시접 폭" data-en="Fallback width">Fallback 시접 폭</span>
+      <span class="unit-input-control"><span class="field-with-unit"><input name="seam_allowance_width" type="number" min="0" step="0.001" placeholder="직접 입력" data-placeholder-ko="직접 입력" data-placeholder-en="manual" data-preset-field><span class="unit-suffix" data-unit-suffix>cm</span></span><span class="preset-menu" data-preset-menu="seam_allowance_width" hidden></span></span>
+    </label>
   </div>
   <div class="row">
     <label><span data-ko="원단 방향성" data-en="Nap direction">원단 방향성</span>

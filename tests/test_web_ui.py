@@ -33,6 +33,20 @@ class WebUiTests(unittest.TestCase):
         self.assertIn('fattern.language', html)
         self.assertIn('fattern.theme', html)
 
+    def test_render_page_includes_unit_specific_dropdown_presets(self) -> None:
+        html = _render_page()
+
+        self.assertIn('data-unit-select', html)
+        self.assertIn('data-unit-suffix', html)
+        self.assertIn('data-preset-field', html)
+        self.assertIn('data-preset-menu="fabric_width"', html)
+        self.assertIn('data-preset-menu="cuttable_width"', html)
+        self.assertIn('data-preset-menu="spacing"', html)
+        self.assertIn('data-preset-menu="seam_allowance_width"', html)
+        self.assertIn('inch: ["36", "44", "54", "56", "57", "58", "60"]', html)
+        self.assertIn('fabric_width: { cm: "150", mm: "1500", m: "1.5", inch: "57"', html)
+        self.assertIn('updateUnitControls', html)
+
     def test_estimate_upload_uses_file_bytes_and_returns_artifact_links(self) -> None:
         store = JobStore(self.temp_dir / "jobs")
         result = estimate_upload(
