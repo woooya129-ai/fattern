@@ -617,12 +617,10 @@ def _best_compact_layout(
     fabric_width: float,
     clearance: float,
 ) -> tuple[tuple[LayoutPlacement, ...], bool] | None:
-    layouts: list[tuple[int, tuple[LayoutPlacement, ...], bool]] = []
+    polygon_layouts: list[tuple[int, tuple[LayoutPlacement, ...], bool]] = []
     orders = _metric_orders_for_layout(metrics)
     rotation_attempts = _rotation_attempts_for_layout(metrics, rotations)
     fallback = _place_bbox_shelf_layout(metrics, rotations, fabric_width, clearance)
-    if fallback is not None:
-        layouts.append((len(orders) * len(rotation_attempts), _compact_within_shelf(fallback, fabric_width, clearance), True))
 
     for order_index, ordered_metrics in enumerate(orders):
         for attempt_index, prefer_longest_edge_down in enumerate(rotation_attempts):
@@ -635,13 +633,16 @@ def _best_compact_layout(
             )
             if placements is not None:
                 refined = _refine_compact_layout(placements, fabric_width, clearance)
-                layouts.append((order_index * len(rotation_attempts) + attempt_index, refined, False))
+                polygon_layouts.append((order_index * len(rotation_attempts) + attempt_index, refined, False))
 
-    if not layouts:
+    if polygon_layouts:
+        _order_index, best, used_bbox_fallback = min(polygon_layouts, key=lambda item: _layout_score(item[1], item[0]))
+        return best, used_bbox_fallback
+
+    if fallback is None:
         return None
 
-    _order_index, best, used_bbox_fallback = min(layouts, key=lambda item: _layout_score(item[1], item[0]))
-    return best, used_bbox_fallback
+    return _compact_within_shelf(fallback, fabric_width, clearance), True
 
 
 def _metric_orders(metrics: tuple[PieceMetrics, ...]) -> tuple[tuple[PieceMetrics, ...], ...]:
@@ -684,8 +685,18 @@ def _packing_difficulty(metric: PieceMetrics) -> float:
 def _metric_orders_for_layout(metrics: tuple[PieceMetrics, ...]) -> tuple[tuple[PieceMetrics, ...], ...]:
     orders = _metric_orders(metrics)
     if sum(len(metric.points) for metric in metrics) > COMPLEX_OUTLINE_POINT_THRESHOLD:
-        return orders[:1]
+        return _complex_metric_orders(orders)
     return orders
+
+
+def _complex_metric_orders(
+    orders: tuple[tuple[PieceMetrics, ...], ...],
+) -> tuple[tuple[PieceMetrics, ...], ...]:
+    selected: list[tuple[PieceMetrics, ...]] = []
+    for index in (0, 4, 2, 1):
+        if index < len(orders):
+            selected.append(orders[index])
+    return tuple(selected)
 
 
 def _rotation_attempts_for_layout(

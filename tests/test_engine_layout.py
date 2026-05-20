@@ -113,6 +113,28 @@ class LayoutTests(unittest.TestCase):
         self.assertAlmostEqual(result.placements[2].x, 7.2)
         self.assertAlmostEqual(result.placements[2].y, 2.2)
 
+    def test_complex_polygon_layout_still_tries_height_order(self) -> None:
+        original_threshold = layout_module.COMPLEX_OUTLINE_POINT_THRESHOLD
+        layout_module.COMPLEX_OUTLINE_POINT_THRESHOLD = 1
+        try:
+            metrics = MetricsResult(
+                metrics=(
+                    polygon_metric("piece_0001", ((0.0, 0.0), (3.0, 0.0), (3.0, 2.0), (0.0, 2.0))),
+                    polygon_metric("piece_0002", ((0.0, 0.0), (3.0, 0.0), (3.0, 2.0), (0.0, 2.0))),
+                    polygon_metric("piece_0003", ((0.0, 0.0), (7.0, 0.0), (7.0, 5.0), (0.0, 5.0))),
+                ),
+                messages=(),
+            )
+
+            result = estimate_marker_layout(metrics, fabric_width=10.2)
+        finally:
+            layout_module.COMPLEX_OUTLINE_POINT_THRESHOLD = original_threshold
+
+        self.assertFalse(result.has_blocker())
+        self.assertAlmostEqual(result.marker_length, 5.0)
+        self.assertEqual(result.placements[0].piece_id, "piece_0003")
+        self.assertFalse(any(message.code == "BBOX_FALLBACK_USED" for message in result.messages))
+
     def test_longest_edge_order_uses_piece_id_tiebreaker(self) -> None:
         metrics = (metric("piece_b", 3.0, 4.0), metric("piece_a", 4.0, 3.0))
 
