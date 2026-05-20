@@ -492,6 +492,10 @@ def _render_page(
       font-weight: 700;
       cursor: pointer;
     }}
+    button:disabled {{
+      cursor: progress;
+      opacity: 0.72;
+    }}
     .toggle-group .toggle-button {{
       width: auto;
       min-height: 34px;
@@ -548,6 +552,48 @@ def _render_page(
     .message code {{ color: var(--muted); }}
     img {{ width: 100%; max-height: 720px; object-fit: contain; border: 1px solid var(--border); background: var(--panel); }}
     pre {{ white-space: pre-wrap; word-break: break-word; background: var(--pre-bg); color: var(--pre-ink); padding: 12px; border-radius: 8px; }}
+    .loading-overlay {{
+      position: fixed;
+      inset: 0;
+      z-index: 1000;
+      display: none;
+      place-items: center;
+      padding: 24px;
+      background: rgba(15, 23, 42, 0.48);
+    }}
+    body.is-calculating .loading-overlay {{ display: grid; }}
+    body.is-calculating main {{ pointer-events: none; }}
+    .loading-card {{
+      width: min(420px, 100%);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 20px;
+      background: var(--panel);
+      box-shadow: 0 20px 56px rgba(15, 23, 42, 0.24);
+    }}
+    .loading-row {{
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 10px;
+    }}
+    .loading-spinner {{
+      width: 28px;
+      height: 28px;
+      flex: 0 0 auto;
+      border: 3px solid var(--border);
+      border-top-color: var(--accent);
+      border-radius: 50%;
+      animation: spin 0.8s linear infinite;
+    }}
+    .loading-card strong {{ font-size: 16px; }}
+    .loading-card p {{ margin: 0; color: var(--muted); line-height: 1.45; }}
+    @keyframes spin {{
+      to {{ transform: rotate(360deg); }}
+    }}
+    @media (prefers-reduced-motion: reduce) {{
+      .loading-spinner {{ animation: none; }}
+    }}
     @media (max-width: 860px) {{
       main {{ grid-template-columns: 1fr; padding: 14px; }}
       .topbar {{ align-items: flex-start; flex-direction: column; }}
@@ -581,6 +627,15 @@ def _render_page(
       {_render_advisor_panel(result, advisor_reply=advisor_reply)}
     </section>
   </main>
+  <div class="loading-overlay" role="status" aria-live="polite" aria-label="Calculating">
+    <div class="loading-card">
+      <div class="loading-row">
+        <span class="loading-spinner" aria-hidden="true"></span>
+        <strong data-ko="&#44228;&#49328; &#51473;" data-en="Calculating">Calculating</strong>
+      </div>
+      <p data-ko="DXF&#47484; &#48516;&#49437;&#54616;&#44256; polygon-aware marker layout&#51012; &#44228;&#49328;&#54616;&#44256; &#51080;&#49845;&#45768;&#45796;. &#48373;&#51105;&#54620; &#54056;&#53556;&#51008; &#51104;&#49884; &#44152;&#47540; &#49688; &#51080;&#49845;&#45768;&#45796;." data-en="Parsing the DXF and calculating the polygon-aware marker layout. Complex patterns can take a little while.">Parsing the DXF and calculating the polygon-aware marker layout. Complex patterns can take a little while.</p>
+    </div>
+  </div>
   {_ui_script()}
 </body>
 </html>"""
@@ -633,6 +688,28 @@ def _ui_script() -> str:
     button.addEventListener("click", () => setTheme(button.dataset.themeChoice));
   });
 
+  const estimateForm = document.querySelector("[data-estimate-form]");
+  if (estimateForm) {
+    let isSubmitting = false;
+    estimateForm.addEventListener("submit", (event) => {
+      if (isSubmitting) {
+        event.preventDefault();
+        return;
+      }
+      if (!estimateForm.checkValidity()) {
+        return;
+      }
+      isSubmitting = true;
+      document.body.classList.add("is-calculating");
+      document.body.setAttribute("aria-busy", "true");
+      const submitButton = estimateForm.querySelector("button[type='submit']");
+      if (submitButton) {
+        submitButton.disabled = true;
+        submitButton.textContent = root.lang === "en" ? "Calculating..." : "\\uacc4\\uc0b0 \\uc911...";
+      }
+    });
+  }
+
   const preferredTheme = window.matchMedia && window.matchMedia("(prefers-color-scheme: dark)").matches
     ? "dark"
     : "light";
@@ -643,7 +720,7 @@ def _ui_script() -> str:
 
 
 def _render_form() -> str:
-    return """<form action="/estimate" method="post" enctype="multipart/form-data">
+    return """<form action="/estimate" method="post" enctype="multipart/form-data" data-estimate-form>
   <h2 data-ko="질문지" data-en="Questionnaire">질문지</h2>
   <p class="notice" data-ko="Fattern은 DXF 패턴으로 rough marker와 견적용 가요척을 계산한다. 생산 확정용 CAD nesting 대체품은 아니다. 모르는 값은 기본값으로 시작해도 된다." data-en="Fattern estimates rough marker yield and quote yield from DXF patterns. It is not a production CAD nesting replacement. Unknown values can stay at their defaults.">Fattern은 DXF 패턴으로 rough marker와 견적용 가요척을 계산한다. 생산 확정용 CAD nesting 대체품은 아니다. 모르는 값은 기본값으로 시작해도 된다.</p>
   <label><span>DXF file</span><input name="dxf_file" type="file" accept=".dxf" required></label>
