@@ -127,6 +127,7 @@ def calculate_piece_set_metrics(
     )
     unit_scale = _unit_scale(source_unit, unit)
     all_messages: list[EngineMessage] = list(_autoscale_messages(source_unit, unit, unit_scale, dxf_unit_hint))
+    small_contour_threshold = _small_invalid_contour_area_threshold(pieces_tuple, unit_scale)
 
     for piece in pieces_tuple:
         result = calculate_piece_metrics(
@@ -136,6 +137,20 @@ def calculate_piece_set_metrics(
             dxf_unit_hint=source_unit,
         )
         if result.has_blocker():
+            blocker = next(message for message in result.messages if message.severity == "blocker")
+            if _can_exclude_small_invalid_contour(piece, unit_scale, small_contour_threshold):
+                all_messages.append(
+                    EngineMessage(
+                        code="SMALL_INVALID_CONTOUR_EXCLUDED",
+                        message=(
+                            f"{piece.piece_id}: small closed contour from entity "
+                            f"{piece.source_entity_index} on layer {piece.layer} was excluded "
+                            f"from marker metrics because it is invalid ({blocker.code})."
+                        ),
+                        severity="warning",
+                    )
+                )
+                continue
             return MetricsResult(
                 metrics=(),
                 messages=result.messages,
@@ -153,6 +168,44 @@ def calculate_piece_set_metrics(
         source_unit=source_unit,
         unit_scale=unit_scale,
     )
+
+
+def _small_invalid_contour_area_threshold(
+    pieces: tuple[PolylineCandidate, ...],
+    unit_scale: float,
+) -> float | None:
+    if len(pieces) < 2:
+        return None
+
+    bbox_areas: list[float] = []
+    for piece in pieces:
+        try:
+            box = bounding_box(_scale_points(piece.points, unit_scale))
+        except PolygonValidationError:
+            continue
+        bbox_areas.append(box.width * box.height)
+
+    if not bbox_areas:
+        return None
+
+    largest_area = max(bbox_areas)
+    if largest_area <= 0:
+        return None
+    return largest_area * 0.01
+
+
+def _can_exclude_small_invalid_contour(
+    piece: PolylineCandidate,
+    unit_scale: float,
+    threshold: float | None,
+) -> bool:
+    if threshold is None:
+        return False
+    try:
+        box = bounding_box(_scale_points(piece.points, unit_scale))
+    except PolygonValidationError:
+        return False
+    return box.width * box.height <= threshold
 
 
 def default_seam_allowance_width(unit: str = DEFAULT_UNIT) -> float:

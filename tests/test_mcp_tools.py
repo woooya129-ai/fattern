@@ -773,6 +773,20 @@ class McpToolTests(unittest.TestCase):
         self.assertTrue(any(name.endswith("_marker_report.pdf") for name in names))
         self.assertTrue(any(name.endswith("_report.csv") for name in names))
 
+    def test_calculate_marker_yield_excludes_small_invalid_closed_contour(self) -> None:
+        job_id = self._create_job()
+        file_id = self.store.register_input_file(job_id, "small-invalid-contour.dxf", _small_invalid_contour_dxf())
+
+        response = self.registry.call_tool(
+            "calculate_marker_yield",
+            self._marker_yield_request(pattern_file_id=file_id, size_ratio={}),
+        )
+
+        self.assertEqual(response["status"], "completed")
+        self.assertEqual(response["errors"], [])
+        self.assertIn("SMALL_INVALID_CONTOUR_EXCLUDED", [warning["code"] for warning in response["warnings"]])
+        self.assertEqual([piece["piece_id"] for piece in response["layout"]["layout_summary"]], ["piece_0001"])
+
     def test_calculate_marker_yield_applies_piece_quantity_without_size_ratio(self) -> None:
         job_id = self._create_job()
         file_id = self.store.register_input_file(
@@ -1301,6 +1315,41 @@ def _line_loop_dxf() -> bytes:
             "20", "3",
             "11", "0",
             "21", "0",
+            "0", "ENDSEC",
+            "0", "EOF",
+        ]
+    ).encode("utf-8")
+
+
+def _small_invalid_contour_dxf() -> bytes:
+    return "\n".join(
+        [
+            "0", "SECTION",
+            "2", "ENTITIES",
+            "0", "LWPOLYLINE",
+            "8", "OUTLINE",
+            "90", "4",
+            "70", "1",
+            "10", "0",
+            "20", "0",
+            "10", "4",
+            "20", "0",
+            "10", "4",
+            "20", "3",
+            "10", "0",
+            "20", "3",
+            "0", "LWPOLYLINE",
+            "8", "MARK",
+            "90", "4",
+            "70", "1",
+            "10", "10",
+            "20", "10",
+            "10", "10.2",
+            "20", "10.2",
+            "10", "10",
+            "20", "10.2",
+            "10", "10.2",
+            "20", "10",
             "0", "ENDSEC",
             "0", "EOF",
         ]

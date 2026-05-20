@@ -5,7 +5,7 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from fattern.engine import PolylineCandidate, calculate_piece_metrics
+from fattern.engine import PolylineCandidate, calculate_piece_metrics, calculate_piece_set_metrics
 from fattern.geometry import bounding_box, polygon_area, polygon_perimeter
 
 
@@ -91,6 +91,30 @@ class GeometryMetricTests(unittest.TestCase):
 
         self.assertTrue(result.has_blocker())
         self.assertEqual(result.messages[0].code, "SELF_INTERSECTION")
+
+    def test_piece_set_excludes_small_invalid_closed_contour(self) -> None:
+        large_piece = PolylineCandidate(
+            piece_id="piece_0001",
+            layer="OUTLINE",
+            points=((0.0, 0.0), (40.0, 0.0), (40.0, 30.0), (0.0, 30.0)),
+            closed=True,
+            source_entity_index=1,
+            vertex_count=4,
+        )
+        small_invalid_marker = PolylineCandidate(
+            piece_id="piece_0002",
+            layer="MARK",
+            points=((50.0, 50.0), (50.2, 50.2), (50.0, 50.2), (50.2, 50.0)),
+            closed=True,
+            source_entity_index=2,
+            vertex_count=4,
+        )
+
+        result = calculate_piece_set_metrics((large_piece, small_invalid_marker))
+
+        self.assertFalse(result.has_blocker())
+        self.assertEqual([metric.piece_id for metric in result.metrics], ["piece_0001"])
+        self.assertEqual(result.messages[0].code, "SMALL_INVALID_CONTOUR_EXCLUDED")
 
     def test_zero_area_returns_invalid_polygon_blocker(self) -> None:
         result = calculate_piece_metrics(candidate(((0.0, 0.0), (1.0, 0.0), (2.0, 0.0))))
