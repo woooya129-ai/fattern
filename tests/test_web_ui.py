@@ -81,6 +81,33 @@ class WebUiTests(unittest.TestCase):
         self.assertTrue((result.run.output_dir / "run_summary.txt").is_file())
         self.assertIn("web_url", result.result)
 
+    def test_estimate_upload_accepts_tshirts_fixture(self) -> None:
+        store = JobStore(self.temp_dir / "jobs")
+        result = estimate_upload(
+            file_name="tshirts.dxf",
+            file_bytes=(FIXTURE_DIR / "tshirts.dxf").read_bytes(),
+            fields={
+                "fabric_width": "150",
+                "unit": "cm",
+                "spacing": "0.2",
+                "seam_allowance_status": "included",
+                "nap_direction": "two_way",
+                "grainline_required": "false",
+                "allowed_rotation": "0",
+                "allowance_policy_mode": "fast_quote",
+                "fabric_type": "unknown",
+                "shrinkage_percent": "0",
+            },
+            store=store,
+            output_root=self.temp_dir / "output",
+            web_base_url="http://127.0.0.1:8765",
+        )
+
+        self.assertEqual(result.result["status"], "completed")
+        self.assertEqual(result.result["layout"]["marker_length"], 68.0)
+        self.assertEqual(len(result.result["layout"]["layout_summary"]), 5)
+        self.assertIn("web_url", result.result)
+
     def test_estimate_upload_renders_seam_line_when_seam_allowance_excluded(self) -> None:
         store = JobStore(self.temp_dir / "jobs")
         result = estimate_upload(

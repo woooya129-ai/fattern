@@ -90,7 +90,7 @@ Each calculation creates a run folder.
 
 ```text
 output/
-  20260518-153012_Simple-T/
+  20260525-222319_tshirts/
     marker_preview.svg
     marker_report.md
     marker_report.pdf
@@ -108,9 +108,9 @@ Files:
 - `result.json`: full result for MCP, Codex, and Claude Code
 - `run_summary.txt`: shortest summary
 
-Example output:
+T-shirts sample Web UI test screenshot (`tests/fixtures/tshirts.dxf`, 150 cm, two_way, seam allowance included):
 
-![Simple-T marker layout output example](docs/assets/simple-t-marker-preview.svg)
+![T-shirts Web UI result screenshot](docs/assets/tshirts-web-ui.png)
 
 Read the key numbers this way:
 
